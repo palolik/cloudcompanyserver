@@ -49,28 +49,28 @@ async function run() {
       });
 
       await client.connect();
-      const postCollection = client.db('Edumanage').collection('Instructors');
+      const packageCollection = client.db('Cloudcompany').collection('packages');
 
 
 app.get('/', (req, res) => {
           res.send('Simple CRUD is running');
 });
-app.get('/classes', async(req, res) =>{
-    const result = await menuCollection.find().toArray();
+app.get('/packages', async(req, res) =>{
+    const result = await packageCollection.find().toArray();
     res.send(result);
 });
-
-app.post('/addPost', async (req, res) => {
+app.post('/addpackages', async (req, res) => {
   const newPost = req.body;
   console.log(newPost);
-  const result = await postCollection.insertOne(newPost);
+  const result = await packageCollection.insertOne(newPost);
   res.send(result);
-});
-app.post('/addassignment', async (req, res) => {
-const newPost = req.body;
-console.log(newPost);
-const result = await assignmentCollection.insertOne(newPost);
-res.send(result);
+  });
+app.delete('/delpackage/:id', async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    console.log('delete: ');
+    const result = await packageCollection.deleteOne(query);
+    res.send(result);
 });
 app.post('/addclasses', async (req, res) => {
 const newPost = req.body;
@@ -130,13 +130,7 @@ try {
   res.status(500).json({ error: 'Internal server error' });
 }
 });
-app.delete('/delPost/:id', async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      console.log('delete: ');
-      const result = await menuCollection.deleteOne(query);
-      res.send(result);
-});
+
       // Send a ping to confirm a successful connection
       await client.db("admin").command({ ping: 1 });
       console.log("Pinged your deployment. You successfully connected to MongoDB!");
