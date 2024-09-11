@@ -58,6 +58,9 @@ async function run() {
     // Employee Collection
     const employeeCollection = client.db('Cloudcompany').collection('employees');
 
+    // Client Collection
+    const clientCollection = client.db('Cloudcompany').collection('clients');
+
     // Get all employees
     app.get('/employees', async (req, res) => {
       try {
@@ -69,7 +72,7 @@ async function run() {
     });
 
     // Add a new employee
-    app.post('/addemployee', verifyToken, async (req, res) => {
+    app.post('/addemployee', async (req, res) => {
       const newEmployee = req.body;
       try {
         const result = await employeeCollection.insertOne(newEmployee);
@@ -87,6 +90,55 @@ async function run() {
         res.json(result);
       } catch (error) {
         res.status(500).json({ message: 'Error deleting employee', error });
+      }
+    });
+
+    // CRUD Operations for Clients
+    
+    // Get all clients
+    app.get('/clients', async (req, res) => {
+      try {
+        const clients = await clientCollection.find().toArray();
+        res.json(clients); // Send client data as JSON
+      } catch (error) {
+        res.status(500).json({ message: 'Error loading clients', error });
+      }
+    });
+
+    // Add a new client
+    app.post('/addclient', async (req, res) => {
+      const newClient = req.body;
+      try {
+        const result = await clientCollection.insertOne(newClient);
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ message: 'Error adding client', error });
+      }
+    });
+
+    // Update a client by ID
+    app.put('/updateclient/:id', verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const updatedData = req.body;
+      try {
+        const result = await clientCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updatedData }
+        );
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ message: 'Error updating client', error });
+      }
+    });
+
+    // Delete a client by ID
+    app.delete('/delclient/:id', verifyToken, async (req, res) => {
+      const id = req.params.id;
+      try {
+        const result = await clientCollection.deleteOne({ _id: new ObjectId(id) });
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ message: 'Error deleting client', error });
       }
     });
 
