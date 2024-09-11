@@ -2,33 +2,21 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const bodyParser = require('body-parser');
+const mongoose = require('mongoose');
+const jwt = require('jsonwebtoken');
 const app = express();
 const port = process.env.PORT || 5000;
 
-// middleware
-// app.use(cors({
-//     origin: `https://samia-11824.web.app`
-// }));
-
-app.use(
-    cors({
-        origin: [
-          'http://localhost:5173', 
-          'http://localhost:5174',
-          'https://crudapp-beb6a.web.app', 
-          'http://10.0.2.2:5173',
-          'http://10.0.2.2:5174' 
- ],
-        credentials: true
-    })
-    );
+// Middleware
+app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
 app.use(express.json());
+app.use(bodyParser.json());
 
+// MongoDB URI (using environment variables)
+const uri = `mongodb+srv://${process.env.EMAILDB}:${process.env.PASSDB}@cluster0.fagav7n.mongodb.net/?retryWrites=true&w=majority`;
 
-// console.log(process.env.EMAILDB)
-const uri = `mongodb+srv://${process.env.EMAILDB}:${process.env.PASSDB}@cluster0.fagav7n.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
+// MongoClient setup
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -37,112 +25,81 @@ const client = new MongoClient(uri, {
   }
 });
 
+// Connect to MongoDB
+mongoose.connect(uri, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+}).then(() => {
+  console.log('Connected to MongoDB');
+}).catch((err) => {
+  console.error('Connection error:', err);
+});
+
+// Verify JWT middleware
+function verifyToken(req, res, next) {
+  const token = req.headers['authorization'];
+  if (!token) {
+    return res.status(403).json({ message: 'No token provided' });
+  }
+  jwt.verify(token, process.env.JWT_SECRET || 'hateskiddo', (err, decoded) => {
+    if (err) {
+      return res.status(500).json({ message: 'Failed to authenticate token' });
+    }
+    req.userId = decoded.id;
+    next();
+  });
+}
+
+// Function to run MongoDB queries
 async function run() {
   try {
+    await client.connect();
+    
+    // Employee Collection
+    const employeeCollection = client.db('Cloudcompany').collection('employees');
 
-      const client = new MongoClient(uri, {
-          serverApi: {
-              version: ServerApiVersion.v1,
-              strict: true,
-              deprecationErrors: true,
-          }
-      });
+    // Get all employees
+    app.get('/employees', async (req, res) => {
+      try {
+        const employees = await employeeCollection.find().toArray();
+        res.json(employees); // Send employee data as JSON
+      } catch (error) {
+        res.status(500).json({ message: 'Error loading employees', error });
+      }
+    });
 
-      await client.connect();
-      const packageCollection = client.db('Cloudcompany').collection('packages');
+    // Add a new employee
+    app.post('/addemployee', verifyToken, async (req, res) => {
+      const newEmployee = req.body;
+      try {
+        const result = await employeeCollection.insertOne(newEmployee);
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ message: 'Error adding employee', error });
+      }
+    });
 
+    // Delete an employee by ID
+    app.delete('/delemployee/:id', verifyToken, async (req, res) => {
+      const id = req.params.id;
+      try {
+        const result = await employeeCollection.deleteOne({ _id: new ObjectId(id) });
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ message: 'Error deleting employee', error });
+      }
+    });
 
-app.get('/', (req, res) => {
-          res.send('Simple CRUD is running');
-});
-app.get('/packages', async(req, res) =>{
-    const result = await packageCollection.find().toArray();
-    res.send(result);
-});
-app.post('/addpackages', async (req, res) => {
-  const newPost = req.body;
-  console.log(newPost);
-  const result = await packageCollection.insertOne(newPost);
-  res.send(result);
-  });
-app.delete('/delpackage/:id', async (req, res) => {
-    const id = req.params.id;
-    const query = { _id: new ObjectId(id) };
-    console.log('delete: ');
-    const result = await packageCollection.deleteOne(query);
-    res.send(result);
-});
-app.post('/addclasses', async (req, res) => {
-const newPost = req.body;
-console.log(newPost);
-const result = await menuCollection.insertOne(newPost);
-res.send(result);
-});
-app.post('/feedback', async (req, res) => {
-const newPost = req.body;
-console.log(newPost);
-const result = await feedbackCollection.insertOne(newPost);
-res.send(result);
-});
-app.get('/feedback', async (req, res) => {
-const cursor = feedbackCollection.find();
-const result = await cursor.toArray();
-res.send(result);
-});
-app.get('/partners', async (req, res) => {
-const cursor = partnersCollection.find();
-const result = await cursor.toArray();
-res.send(result);
-});
-
-app.get('/post/:id', async (req, res) => {
-      const postId = req.params.id;
-      console.log('ID', postId);
-      const query = { _id: new ObjectId(postId) };
-      const result = await menuCollection.findOne(query);
-      res.send(result);
-});
-
-app.put('/classes/:id', async (req, res) => {
-const id = req.params.id;
-const filter = { _id: new ObjectId(id) };
-const updatedPostData = req.body;
-
-// Define the update operation
-const updateOperation = {
-  $set: {
-      image: updatedPostData.image,
-      title: updatedPostData.title,
-      price: updatedPostData.price,
-      description: updatedPostData.description,
-      userEmail: updatedPostData.userEmail,
-      userName: updatedPostData.userName
-  }
-};
-
-try {
-  // Perform the update operation
-  const result = await menuCollection.updateOne(filter, updateOperation);
-
- 
-} catch (error) {
-  console.error('Error updating post:', error);
-  res.status(500).json({ error: 'Internal server error' });
-}
-});
-
-      // Send a ping to confirm a successful connection
-      await client.db("admin").command({ ping: 1 });
-      console.log("Pinged your deployment. You successfully connected to MongoDB!");
-
-
-      app.listen(port, () => {
-          console.log(`Server is running on port: ${port}`);
-      });
+    // Start the server
+    app.listen(port, () => {
+      console.log(`Server running at http://localhost:${port}`);
+    });
 
   } finally {
-      // Ensures that the client will close when you finish/error
-      await client.close();
+    // Uncomment the following line to close the MongoDB connection if needed
+    // await client.close();
   }
 }
+
+// Run the MongoDB server connection
 run().catch(console.dir);
