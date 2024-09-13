@@ -25,10 +25,8 @@ app.use(
 app.use(express.json());
 
 
-// console.log(process.env.EMAILDB)
 const uri = `mongodb+srv://${process.env.EMAILDB}:${process.env.PASSDB}@cluster0.fagav7n.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -50,6 +48,9 @@ async function run() {
 
       await client.connect();
       const packageCollection = client.db('Cloudcompany').collection('packages');
+      const faqCollection = client.db('Cloudcompany').collection('faq');
+      const reviewCollection = client.db('Cloudcompany').collection('reviews');
+      const couponCollection = client.db('Cloudcompany').collection('coupons');
 
 
 app.get('/', (req, res) => {
@@ -72,6 +73,70 @@ app.delete('/delpackage/:id', async (req, res) => {
     const result = await packageCollection.deleteOne(query);
     res.send(result);
 });
+
+
+// faq CRUD operations 
+app.get('/faq', async(req, res) =>{
+  const result = await faqCollection.find().toArray();
+  res.send(result);
+});
+app.post('/addfaq', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await faqCollection.insertOne(newPost);
+res.send(result);
+});
+app.delete('/delfaq/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete: ');
+  const result = await faqCollection.deleteOne(query);
+  res.send(result);
+});
+
+// Reviews CRUD operations 
+app.get('/review', async(req, res) =>{
+  const result = await reviewCollection.find().toArray();
+  res.send(result);
+});
+app.post('/addreview', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await reviewCollection.insertOne(newPost);
+res.send(result);
+});
+app.delete('/delreview/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete: ');
+  const result = await reviewCollection.deleteOne(query);
+  res.send(result);
+});
+
+
+// Coupon CRUD operations 
+app.get('/coupon', async(req, res) =>{
+  const result = await couponCollection.find().toArray();
+  res.send(result);
+});
+app.post('/addcoupon', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await couponCollection.insertOne(newPost);
+res.send(result);
+});
+app.delete('/delcoupon/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete:');
+  const result = await couponCollection.deleteOne(query);
+  res.send(result);
+});
+
+
+
+
+
 app.post('/addclasses', async (req, res) => {
 const newPost = req.body;
 console.log(newPost);
@@ -84,6 +149,7 @@ console.log(newPost);
 const result = await feedbackCollection.insertOne(newPost);
 res.send(result);
 });
+
 app.get('/feedback', async (req, res) => {
 const cursor = feedbackCollection.find();
 const result = await cursor.toArray();
@@ -108,7 +174,6 @@ const id = req.params.id;
 const filter = { _id: new ObjectId(id) };
 const updatedPostData = req.body;
 
-// Define the update operation
 const updateOperation = {
   $set: {
       image: updatedPostData.image,
@@ -121,7 +186,6 @@ const updateOperation = {
 };
 
 try {
-  // Perform the update operation
   const result = await menuCollection.updateOne(filter, updateOperation);
 
  
@@ -131,7 +195,6 @@ try {
 }
 });
 
-      // Send a ping to confirm a successful connection
       await client.db("admin").command({ ping: 1 });
       console.log("Pinged your deployment. You successfully connected to MongoDB!");
 
@@ -141,7 +204,6 @@ try {
       });
 
   } finally {
-      // Ensures that the client will close when you finish/error
       await client.close();
   }
 }
