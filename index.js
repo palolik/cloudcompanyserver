@@ -3,6 +3,8 @@ const cors = require('cors');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const bodyParser = require('body-parser');
+const fs = require('fs'); // Add the fs module here
+const multer = require('multer');
 const mongoose = require('mongoose'); // required for Mongoose model
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config();
@@ -10,10 +12,32 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 5000;
 
+
+
+
 // Middleware
 app.use(cors({ origin: ['http://localhost:5173'], credentials: true }));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
+
+const uploadDir = 'uploads/';
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });  // Creates the directory if it doesn't exist
+}
+
+
+// Configure multer
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+      cb(null, 'uploads/'); // Destination folder for uploaded files
+  },
+  filename: (req, file, cb) => {
+      cb(null, file.originalname); // File name in the destination folder
+  }
+});
+
+const upload = multer({ storage: storage });
 
 // MongoDB URI
 const uri = `mongodb+srv://${process.env.EMAILDB}:${process.env.PASSDB}@cluster0.fagav7n.mongodb.net/?retryWrites=true&w=majority`;
@@ -86,6 +110,8 @@ app.post('/login', async (req, res) => {
   }
 });
 
+
+
 // Route to add a new package
 app.post('/addpackages', async (req, res) => {
   const packages = getCollection('packages');
@@ -113,32 +139,146 @@ app.get('/projects', async (req, res) => {
   }
 });
 
+// Route to upload file and create an order
+app.post('/orders', upload.single('file'), async (req, res) => {
+  try {
+    const { projectTitle, projectBrief, packageName, price, total } = req.body;
+    const file = req.file; // Multer places file data in req.file
+
+    const newOrder = {
+      projectTitle,
+      projectBrief,
+      file: file ? file.path : null, // Save the path to the file
+      packageName,
+      price,
+      total,
+      createdAt: new Date() // Optionally add timestamp
+    };
+
+    await getCollection('orders').insertOne(newOrder); // Corrected collection name 'orders'
+    res.status(201).send('Order saved successfully!');
+  } catch (error) {
+    console.error('Error saving order:', error);
+    res.status(500).send('Error saving order.');
+  }
+});
+
 
 
 // API to fetch all clients
-app.get('admin/clients', async (req, res) => {
-  const clients = getCollection('clients')
+app.get('/client-ls', async (req, res) => {
+  const clients = getCollection('clients'); // Correctly accessing the 'clients' collection
   try {
-      const clients = await Client.find();
-      res.json(clients);
+    const clientsList = await clients.find({}).toArray(); // Fetching all documents from the 'clients' collection
+    res.json(clientsList);
   } catch (error) {
-      res.status(500).json({ message: 'Error fetching clients' });
+    console.error('Error fetching clients:', error);
+    res.status(500).json({ message: 'Error fetching clients' });
   }
 });
+
+app.get('/coupon', async(req, res) =>{
+  const result = await getCollection('coupon').find({}).toArray();
+  res.send(result);
+});
+app.post('/addcoupon', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await getCollection('coupon').insertOne(newPost);
+res.send(result);
+});
+app.delete('/delcoupon/:id', async (req, res) => {
+  const id = req.params.id;
+  try {
+    const query = { _id: new ObjectId(id) };  // Ensure it's converted to ObjectId
+    const result = await getCollection("coupon").deleteOne(query);
+
+    if (result.deletedCount === 1) {
+      res.json({ message: 'Coupon deleted', deletedCount: 1 });
+    } else {
+      res.status(404).json({ message: 'Coupon not found' });
+    }
+  } catch (error) {
+    console.error('Error deleting coupon:', error);
+    res.status(500).json({ message: 'Error deleting coupon', error });
+  }
+});
+
+app.put('/update/:id', async (req, res) => {
+  const { id } = req.params;
+  const updatedCoupon = req.body;
+  const coupons = getCollection('coupon');
+
+  try {
+    const result = await coupons.findOneAndUpdate(
+      { _id: new ObjectId(id) },
+      { $set: updatedCoupon },
+      { returnOriginal: false }
+    );
+    if (result.value) {
+      res.json({ message: 'Coupon updated successfully', updatedPackage: result.value });
+    } else {
+      res.status(404).json({ message: 'coupon not found' });
+    }
+  } catch (error) {
+    console.error('Error updating coupon:', error);
+    res.status(500).json({ message: 'Error updating coupon', error });
+  }
+});
+app.get('/faq', async(req, res) =>{
+  const result = await getCollection('faq').find().toArray();
+  res.send(result);
+});
+app.post('/addfaq', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await getCollection("faq").insertOne(newPost);
+res.send(result);
+});
+app.delete('/delfaq/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete: ');
+  const result = await getCollection("faq").deleteOne(query);
+  res.send(result);
+});
+
+
+// Reviews CRUD operations 
+app.get('/review', async(req, res) =>{
+  const result = await getCollection('reviews').find().toArray();
+  res.send(result);
+});
+app.post('/addreviews', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await getCollection('reviews').insertOne(newPost);
+res.send(result);
+});
+app.delete('/delreviews/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete: ');
+  const result = await getCollection("reviews").deleteOne(query);
+  res.send(result);
+});
+
 
 
 // Route to fetch all projects
-app.get('admin/admin-ls', async (req, res) => {
-  const projects = getCollection('admin');
-
+app.get('/admin-ls', async (req, res) => {
+  const admin = getCollection('admin'); // Ensure the collection name is 'admin'
   try {
-    const projectsList = await projects.find({}).toArray();
-    res.json(projectsList);
+    const adminList = await admin.find({}).toArray();
+    console.log(adminList); // Log the fetched admin data on the server
+    res.json(adminList);    // Send the response to the frontend
   } catch (error) {
-    console.error('Error fetching projects:', error);
-    res.status(500).json({ message: 'Error fetching projects', error });
+    console.error('Error fetching admins:', error);
+    res.status(500).json({ message: 'Error fetching admins' });
   }
 });
+
+
 
 // Route to fetch all employees
 app.get('/employees', async (req, res) => {
@@ -225,18 +365,8 @@ app.put('/update-package/:id', async (req, res) => {
   }
 });
 
-// Route to get all clients
-app.get('/clients', async (req, res) => {
-  const clients = getCollection('clients');
 
-  try {
-    const clientsList = await clients.find({}).toArray();
-    res.json(clientsList);
-  } catch (error) {
-    console.error('Error fetching clients:', error);
-    res.status(500).json({ message: 'Error fetching clients', error });
-  }
-});
+
 
 // Start the server
 app.listen(port, () => {
