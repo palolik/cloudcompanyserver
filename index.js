@@ -16,7 +16,7 @@ const port = process.env.PORT || 5000;
 
 
 // Middleware
-app.use(cors({ origin: ['http://localhost:5173'], credentials: true }));
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
@@ -40,7 +40,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // MongoDB URI
-const uri = `mongodb+srv://${process.env.EMAILDB}:${process.env.PASSDB}@cluster0.fagav7n.mongodb.net/?retryWrites=true&w=majority`;
+const uri = `mongodb+srv://prottoy2441139:PCcEnjG5yyVwyxIw@cluster0.fagav7n.mongodb.net/?retryWrites=true&w=majority`;
 
 // Create MongoClient instance
 const client = new MongoClient(uri, {
@@ -100,7 +100,7 @@ app.post('/login', async (req, res) => {
     const token = jwt.sign(
       { id: user._id, email: user.email, role: user.role },
       process.env.JWT_SECRET || 'defaultSecretKey',
-      { expiresIn: '2h' }
+      { expiresIn: '24h' }
     );
 
     res.json({ message: 'Login successful', token });
@@ -138,6 +138,72 @@ app.get('/projects', async (req, res) => {
     res.status(500).json({ message: 'Error fetching projects', error });
   }
 });
+
+
+// Route to send a chat message (supports file upload)
+app.post('/send-chat', upload.single('file'), async (req, res) => {
+  const { senderId, recipientId, message } = req.body;
+  const file = req.file; // Multer processes the uploaded file
+
+  try {
+    const chatMessage = {
+      senderId,
+      recipientId,
+      message,
+      file: file ? file.path : null, // Store file path if present
+      timestamp: new Date(),
+      status: 'unread'
+    };
+
+    // Insert chat message into MongoDB
+    await getCollection('chats').insertOne(chatMessage);
+
+    res.status(201).json({ message: 'Chat message sent successfully' });
+  } catch (error) {
+    console.error('Error sending chat message:', error);
+    res.status(500).json({ message: 'Error sending chat message', error });
+  }
+});
+
+// Route to fetch chat history between client and admin
+app.get('/chat-history/:senderId/:recipientId', async (req, res) => {
+  const { senderId, recipientId } = req.params;
+
+  try {
+    const chatHistory = await getCollection('chats')
+      .find({
+        $or: [
+          { senderId, recipientId },
+          { senderId: recipientId, recipientId: senderId } // For two-way conversation
+        ]
+      })
+      .sort({ timestamp: 1 }) // Sort by timestamp
+      .toArray();
+
+    res.json(chatHistory);
+  } catch (error) {
+    console.error('Error fetching chat history:', error);
+    res.status(500).json({ message: 'Error fetching chat history', error });
+  }
+});
+
+// Route to mark messages as read
+app.put('/mark-read/:chatId', async (req, res) => {
+  const { chatId } = req.params;
+
+  try {
+    await getCollection('chats').updateOne(
+      { _id: new ObjectId(chatId) },
+      { $set: { status: 'read' } }
+    );
+
+    res.json({ message: 'Chat message marked as read' });
+  } catch (error) {
+    console.error('Error marking message as read:', error);
+    res.status(500).json({ message: 'Error marking message as read', error });
+  }
+});
+
 
 // Route to upload file and create an order
 app.post('/orders', upload.single('file'), async (req, res) => {
