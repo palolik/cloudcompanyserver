@@ -51,6 +51,9 @@ async function run() {
       const faqCollection = client.db('Cloudcompany').collection('faq');
       const reviewCollection = client.db('Cloudcompany').collection('reviews');
       const couponCollection = client.db('Cloudcompany').collection('coupons');
+      const serviceCollection = client.db('Cloudcompany').collection('service');
+      const categoryCollection = client.db('Cloudcompany').collection('category');
+      const teamCollection = client.db('Cloudcompany').collection('team');
 
 
 app.get('/', (req, res) => {
@@ -73,7 +76,6 @@ app.delete('/delpackage/:id', async (req, res) => {
     const result = await packageCollection.deleteOne(query);
     res.send(result);
 });
-
 
 // faq CRUD operations 
 app.get('/faq', async(req, res) =>{
@@ -132,6 +134,90 @@ app.delete('/delcoupon/:id', async (req, res) => {
   const result = await couponCollection.deleteOne(query);
   res.send(result);
 });
+
+//                                                 Service CRUD operations 
+app.get('/service', async(req, res) =>{
+  const result = await serviceCollection.find().toArray();
+  res.send(result);
+});
+app.post('/addservice', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await serviceCollection.insertOne(newPost);
+res.send(result);
+});
+app.delete('/delservice/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete:');
+  const result = await serviceCollection.deleteOne(query);
+  res.send(result);
+});
+
+
+
+//                                                 Team CRUD operations 
+app.get('/team', async(req, res) =>{
+  const result = await teamCollection.find().toArray();
+  res.send(result);
+});
+app.post('/addteam', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await teamCollection.insertOne(newPost);
+res.send(result);
+});
+app.delete('/delteam/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete:');
+  const result = await teamCollection.deleteOne(query);
+  res.send(result);
+});
+
+
+//                                                 Category CRUD operations 
+app.get('/category', async(req, res) =>{
+  const result = await categoryCollection.find().toArray();
+  res.send(result);
+});
+app.post('/addcategory', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await categoryCollection.insertOne(newPost);
+res.send(result);
+});
+app.delete('/delcategory/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete:');
+  const result = await categoryCollection.deleteOne(query);
+  res.send(result);
+});
+
+//                                                 Advertise CRUD operations 
+app.get('/advertise', async(req, res) =>{
+  const result = await advertiseCollection.find().toArray();
+  res.send(result);
+});
+app.post('/addadvertise', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await advertiseCollection.insertOne(newPost);
+res.send(result);
+});
+app.delete('/deladvertise/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete:');
+  const result = await advertiseCollection.deleteOne(query);
+  res.send(result);
+});
+
+
+
+
+
 
 
 
