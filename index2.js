@@ -1,296 +1,232 @@
 const express = require('express');
 const cors = require('cors');
+const multer = require('multer');
+const path = require('path');
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+
 const app = express();
 const port = process.env.PORT || 5000;
-
-// middleware
-// app.use(cors({
-//     origin: `https://samia-11824.web.app`
-// }));
 
 app.use(
     cors({
         origin: [
-          'http://localhost:5173', 
-          'http://localhost:5174',
-          'https://crudapp-beb6a.web.app', 
-          'http://10.0.2.2:5173',
-          'http://10.0.2.2:5174' 
- ],
+            'http://localhost:5173', 
+            'http://localhost:5174',
+            'https://crudapp-beb6a.web.app', 
+            'http://10.0.2.2:5173',
+            'http://10.0.2.2:5174'
+        ],
         credentials: true
     })
-    );
+);
 app.use(express.json());
 
-
+// MongoDB connection
 const uri = `mongodb+srv://${process.env.EMAILDB}:${process.env.PASSDB}@cluster0.fagav7n.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-
 const client = new MongoClient(uri, {
-  serverApi: {
-    version: ServerApiVersion.v1,
-    strict: true,
-    deprecationErrors: true,
-  }
+    serverApi: {
+        version: ServerApiVersion.v1,
+        strict: true,
+        deprecationErrors: true,
+    }
 });
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'uploads/'); // Ensure this folder exists
+    },
+    filename: (req, file, cb) => {
+        const uniqueName = `${Date.now()}-${file.originalname}`;
+        cb(null, uniqueName);
+    }
+});
+
+const upload = multer({ storage });
+
+// Serve static files from the uploads directory
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 async function run() {
-  try {
+    try {
+        await client.connect();
+        const certificateCollection = client.db('Ofs').collection('certificate');
+        const vendorCollection = client.db('Ofs').collection('vendor');
+        const pdfCollection = client.db('Ofs').collection('pdfs');
+        const quaryCollection = client.db('Ofs').collection('quary');
+        const mapCollection = client.db('Ofs').collection('mapdata');
+        const socialCollection = client.db('Ofs').collection('social');
 
-      const client = new MongoClient(uri, {
-          serverApi: {
-              version: ServerApiVersion.v1,
-              strict: true,
-              deprecationErrors: true,
+
+
+        app.get('/', (req, res) => {
+            res.send('Simple CRUD is running');
+        });
+
+        // Certificate CRUD operations 
+        app.get('/certificate', async (req, res) => {
+            const result = await certificateCollection.find().toArray();
+            res.send(result);
+        });
+
+        app.post('/addcertificate', async (req, res) => {
+            const newPost = req.body;
+            console.log(newPost);
+            const result = await certificateCollection.insertOne(newPost);
+            res.send(result);
+        });
+
+        app.delete('/delcertificate/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) };
+            console.log('delete: ');
+            const result = await certificateCollection.deleteOne(query);
+            res.send(result);
+        });
+
+        // Vendor CRUD operations 
+        app.get('/vendor', async (req, res) => {
+            const result = await vendorCollection.find().toArray();
+            res.send(result);
+        });
+
+        app.post('/addvendor', async (req, res) => {
+            const newPost = req.body;
+            console.log(newPost);
+            const result = await vendorCollection.insertOne(newPost);
+            res.send(result);
+        });
+
+        app.delete('/delvendor/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) };
+            console.log('delete: ');
+            const result = await vendorCollection.deleteOne(query);
+            res.send(result);
+        });
+
+        //Quary CRUD operations 
+        app.get('/quary', async (req, res) => {
+            const result = await quaryCollection.find().toArray();
+            res.send(result);
+        });    
+        app.post('/addquary', async (req, res) => {
+            const newPost = req.body;
+            console.log(newPost);
+            const result = await quaryCollection.insertOne(newPost);
+            res.send(result);
+        });   
+        app.delete('/delquary/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) };
+            console.log('delete: ');
+            const result = await quaryCollection.deleteOne(query);
+            res.send(result);
+        });
+
+        //Quary CRUD operations 
+        app.get('/social', async (req, res) => {
+            const result = await socialCollection.find().toArray();
+            res.send(result);
+        });    
+        app.post('/addsocial', async (req, res) => {
+            const newPost = req.body;
+            console.log(newPost);
+            const result = await socialCollection.insertOne(newPost);
+            res.send(result);
+        });   
+        app.delete('/delsocial/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) };
+            console.log('delete: ');
+            const result = await socialCollection.deleteOne(query);
+            res.send(result);
+        });
+        // PDF CRUD operations 
+        app.get('/pdfs', async (req, res) => {
+            const result = await pdfCollection.find().toArray();
+            res.send(result);
+        });
+
+           //Map CRUD operations 
+           app.get('/map', async (req, res) => {
+            const result = await mapCollection.find().toArray();
+            res.send(result);
+        });    
+
+        app.post('/addmap', async (req, res) => {
+            const newPost = req.body;
+            console.log(newPost);
+            const result = await mapCollection.insertOne(newPost);
+            res.send(result);
+        });   
+
+        app.delete('/delmap/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) };
+            console.log('delete: ');
+            const result = await mapCollection.deleteOne(query);
+            res.send(result);
+        });
+
+        // PDF CRUD operations 
+        app.get('/pdfs', async (req, res) => {
+            const result = await pdfCollection.find().toArray();
+            res.send(result);
+        });
+
+
+        app.get('/uploads/:filename', async (req, res) => {
+          const filename = req.params.filename; // Get the filename from the URL
+          try {
+              const pdfDocument = await pdfCollection.findOne({ fileLocation: { $regex: filename } });
+      
+              if (pdfDocument) {
+                  res.sendFile(path.join(__dirname, pdfDocument.fileLocation), (err) => {
+                      if (err) {
+                          res.status(err.status).end();
+                      }
+                  });
+              } else {
+                  res.status(404).send('File not found');
+              }
+              
+          } catch (error) {
+              console.error('Error retrieving the file:', error);
+              res.status(500).send('Internal server error');
           }
       });
+      
 
-      await client.connect();
-      const packageCollection = client.db('Cloudcompany').collection('packages');
-      const faqCollection = client.db('Cloudcompany').collection('faq');
-      const reviewCollection = client.db('Cloudcompany').collection('reviews');
-      const couponCollection = client.db('Cloudcompany').collection('coupons');
-      const serviceCollection = client.db('Cloudcompany').collection('service');
-      const categoryCollection = client.db('Cloudcompany').collection('category');
-      const teamCollection = client.db('Cloudcompany').collection('team');
+        app.post('/pdfuploader', upload.single('pdffile'), async (req, res) => {
+            const { pdfname } = req.body;
+            const fileLocation = req.file.path.replace(/\\/g, '/'); // Normalize path for web
 
+            const newCertificate = { pdfName: pdfname, fileLocation };
+            const result = await pdfCollection.insertOne(newCertificate);
 
-app.get('/', (req, res) => {
-          res.send('Simple CRUD is running');
-});
-app.get('/packages', async(req, res) =>{
-    const result = await packageCollection.find().toArray();
-    res.send(result);
-});
-app.post('/addpackages', async (req, res) => {
-  const newPost = req.body;
-  console.log(newPost);
-  const result = await packageCollection.insertOne(newPost);
-  res.send(result);
-  });
-app.delete('/delpackage/:id', async (req, res) => {
-    const id = req.params.id;
-    const query = { _id: new ObjectId(id) };
-    console.log('delete: ');
-    const result = await packageCollection.deleteOne(query);
-    res.send(result);
-});
+            res.json({ insertedId: result.insertedId, fileLocation });
+        });
 
-// faq CRUD operations 
-app.get('/faq', async(req, res) =>{
-  const result = await faqCollection.find().toArray();
-  res.send(result);
-});
-app.post('/addfaq', async (req, res) => {
-const newPost = req.body;
-console.log(newPost);
-const result = await faqCollection.insertOne(newPost);
-res.send(result);
-});
-app.delete('/delfaq/:id', async (req, res) => {
-  const id = req.params.id;
-  const query = { _id: new ObjectId(id) };
-  console.log('delete: ');
-  const result = await faqCollection.deleteOne(query);
-  res.send(result);
-});
+        app.delete('/delpdf/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) };
+            console.log('delete: ');
+            const result = await pdfCollection.deleteOne(query);
+            res.send(result);
+        });
 
-// Reviews CRUD operations 
-app.get('/review', async(req, res) =>{
-  const result = await reviewCollection.find().toArray();
-  res.send(result);
-});
-app.post('/addreview', async (req, res) => {
-const newPost = req.body;
-console.log(newPost);
-const result = await reviewCollection.insertOne(newPost);
-res.send(result);
-});
-app.delete('/delreview/:id', async (req, res) => {
-  const id = req.params.id;
-  const query = { _id: new ObjectId(id) };
-  console.log('delete: ');
-  const result = await reviewCollection.deleteOne(query);
-  res.send(result);
-});
+        await client.db("admin").command({ ping: 1 });
+        console.log("Pinged your deployment. You successfully connected to MongoDB!");
+        app.listen(port, () => {
+            console.log(`Server is running on port: ${port}`);
+        });
 
-
-// Coupon CRUD operations 
-app.get('/coupon', async(req, res) =>{
-  const result = await couponCollection.find().toArray();
-  res.send(result);
-});
-app.post('/addcoupon', async (req, res) => {
-const newPost = req.body;
-console.log(newPost);
-const result = await couponCollection.insertOne(newPost);
-res.send(result);
-});
-app.delete('/delcoupon/:id', async (req, res) => {
-  const id = req.params.id;
-  const query = { _id: new ObjectId(id) };
-  console.log('delete:');
-  const result = await couponCollection.deleteOne(query);
-  res.send(result);
-});
-
-//                                                 Service CRUD operations 
-app.get('/service', async(req, res) =>{
-  const result = await serviceCollection.find().toArray();
-  res.send(result);
-});
-app.post('/addservice', async (req, res) => {
-const newPost = req.body;
-console.log(newPost);
-const result = await serviceCollection.insertOne(newPost);
-res.send(result);
-});
-app.delete('/delservice/:id', async (req, res) => {
-  const id = req.params.id;
-  const query = { _id: new ObjectId(id) };
-  console.log('delete:');
-  const result = await serviceCollection.deleteOne(query);
-  res.send(result);
-});
-
-
-
-//                                                 Team CRUD operations 
-app.get('/team', async(req, res) =>{
-  const result = await teamCollection.find().toArray();
-  res.send(result);
-});
-app.post('/addteam', async (req, res) => {
-const newPost = req.body;
-console.log(newPost);
-const result = await teamCollection.insertOne(newPost);
-res.send(result);
-});
-app.delete('/delteam/:id', async (req, res) => {
-  const id = req.params.id;
-  const query = { _id: new ObjectId(id) };
-  console.log('delete:');
-  const result = await teamCollection.deleteOne(query);
-  res.send(result);
-});
-
-
-//                                                 Category CRUD operations 
-app.get('/category', async(req, res) =>{
-  const result = await categoryCollection.find().toArray();
-  res.send(result);
-});
-app.post('/addcategory', async (req, res) => {
-const newPost = req.body;
-console.log(newPost);
-const result = await categoryCollection.insertOne(newPost);
-res.send(result);
-});
-app.delete('/delcategory/:id', async (req, res) => {
-  const id = req.params.id;
-  const query = { _id: new ObjectId(id) };
-  console.log('delete:');
-  const result = await categoryCollection.deleteOne(query);
-  res.send(result);
-});
-
-//                                                 Advertise CRUD operations 
-app.get('/advertise', async(req, res) =>{
-  const result = await advertiseCollection.find().toArray();
-  res.send(result);
-});
-app.post('/addadvertise', async (req, res) => {
-const newPost = req.body;
-console.log(newPost);
-const result = await advertiseCollection.insertOne(newPost);
-res.send(result);
-});
-app.delete('/deladvertise/:id', async (req, res) => {
-  const id = req.params.id;
-  const query = { _id: new ObjectId(id) };
-  console.log('delete:');
-  const result = await advertiseCollection.deleteOne(query);
-  res.send(result);
-});
-
-
-
-
-
-
-
-
-
-
-app.post('/addclasses', async (req, res) => {
-const newPost = req.body;
-console.log(newPost);
-const result = await menuCollection.insertOne(newPost);
-res.send(result);
-});
-app.post('/feedback', async (req, res) => {
-const newPost = req.body;
-console.log(newPost);
-const result = await feedbackCollection.insertOne(newPost);
-res.send(result);
-});
-
-app.get('/feedback', async (req, res) => {
-const cursor = feedbackCollection.find();
-const result = await cursor.toArray();
-res.send(result);
-});
-app.get('/partners', async (req, res) => {
-const cursor = partnersCollection.find();
-const result = await cursor.toArray();
-res.send(result);
-});
-
-app.get('/post/:id', async (req, res) => {
-      const postId = req.params.id;
-      console.log('ID', postId);
-      const query = { _id: new ObjectId(postId) };
-      const result = await menuCollection.findOne(query);
-      res.send(result);
-});
-
-app.put('/classes/:id', async (req, res) => {
-const id = req.params.id;
-const filter = { _id: new ObjectId(id) };
-const updatedPostData = req.body;
-
-const updateOperation = {
-  $set: {
-      image: updatedPostData.image,
-      title: updatedPostData.title,
-      price: updatedPostData.price,
-      description: updatedPostData.description,
-      userEmail: updatedPostData.userEmail,
-      userName: updatedPostData.userName
-  }
-};
-
-try {
-  const result = await menuCollection.updateOne(filter, updateOperation);
-
- 
-} catch (error) {
-  console.error('Error updating post:', error);
-  res.status(500).json({ error: 'Internal server error' });
+    } finally {
+        // Uncomment to close client when not in use
+        // await client.close();
+    }
 }
-});
 
-      await client.db("admin").command({ ping: 1 });
-      console.log("Pinged your deployment. You successfully connected to MongoDB!");
-
-
-      app.listen(port, () => {
-          console.log(`Server is running on port: ${port}`);
-      });
-
-  } finally {
-      await client.close();
-  }
-}
 run().catch(console.dir);
