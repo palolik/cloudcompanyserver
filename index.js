@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
@@ -8,7 +9,6 @@ const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY); // Include Stripe
-require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 5000;
