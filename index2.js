@@ -64,6 +64,19 @@ async function run() {
             res.send('Simple CRUD is running');
         });
 
+        // packages
+        app.get('/packages', async (req, res) => {
+            const packages = getCollection('packages');
+          
+            try {
+              const packagesList = await packages.find({}).toArray();
+              res.json(packagesList);
+            } catch (error) {
+              console.error('Error fetching packages:', error);
+              res.status(500).json({ message: 'Error fetching packages', error });
+            }
+        });
+
         // Certificate CRUD operations 
         app.get('/certificate', async (req, res) => {
             const result = await certificateCollection.find().toArray();
