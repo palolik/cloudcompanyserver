@@ -6,7 +6,7 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
 const bodyParser = require('body-parser');
-const mongoose = require('mongoose');
+const mongoose = require('mongoose');   
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY); // Include Stripe
 
@@ -146,6 +146,26 @@ app.delete('/delvendor/:id', async (req, res) => {
 
 // ********* PAYMENT ROUTES *********
 
+
+// payment intent
+app.post('/createPaymentIntent', async (req, res) => {
+    const {price} = req.body;
+    // console.log(price)
+    const amount = parseInt(price*100);
+    // console.log('amount:',amount,'|', 'price: ', price)
+
+    const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: 'usd',
+        payment_method_types: [
+            'card'
+        ]
+    }) ;
+
+    res.send({
+        clientSecret:paymentIntent.client_secret
+    })
+})
 app.post('/create-checkout-session', async (req, res) => {
     const { items } = req.body; // Array of items to purchase
 
