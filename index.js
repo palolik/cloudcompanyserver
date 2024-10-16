@@ -144,6 +144,17 @@ app.delete('/delvendor/:id', async (req, res) => {
     res.send(result);
 });
 
+
+
+
+// ********* Place Orders *********
+app.post('/addOrder', async (req, res) => {
+    const newPost = req.body;
+    const result = await getCollection('Cloudcompany', 'orders').insertOne(newPost);
+    res.send(result);
+});
+
+
 // ********* PAYMENT ROUTES *********
 
 
