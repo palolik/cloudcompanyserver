@@ -1,237 +1,228 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const bcrypt = require('bcrypt');//error loading bcrypt...
+const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const path = require('path');
 const bodyParser = require('body-parser');
-const mongoose = require('mongoose'); // required for Mongoose model
+const mongoose = require('mongoose');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
-require('dotenv').config();
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY); // Include Stripe
 
 const app = express();
 const port = process.env.PORT || 5000;
 
 // Middleware
-app.use(cors({ origin: ['http://localhost:5173'], credentials: true }));
+app.use(cors({
+    origin: [
+        'http://localhost:5173',
+        'http://localhost:5174',
+        'https://crudapp-beb6a.web.app',
+        'http://10.0.2.2:5173',
+        'http://10.0.2.2:5174'
+    ],
+    credentials: true
+}));
 app.use(express.json());
 app.use(bodyParser.json());
 
-// MongoDB URI
-const uri = `mongodb+srv://${process.env.EMAILDB}:${process.env.PASSDB}@cluster0.fagav7n.mongodb.net/?retryWrites=true&w=majority`;
-
-// Create MongoClient instance
+// MongoDB connection
+const uri = `mongodb+srv://${process.env.EMAILDB}:${process.env.PASSDB}@cluster0.fagav7n.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, {
-  serverApi: {
-    version: ServerApiVersion.v1,
-    strict: true,
-    deprecationErrors: true,
-  },
+    serverApi: {
+        version: ServerApiVersion.v1,
+        strict: true,
+        deprecationErrors: true,
+    }
 });
 
 // Connect to MongoDB
 client.connect()
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('Connection error:', err));
+    .then(() => console.log('Connected to MongoDB'))
+    .catch(err => console.error('Connection error:', err));
 
 // Define dynamic collection access function
-const getCollection = (collectionName) => client.db('Cloudcompany').collection(collectionName);
+const getCollection = (dbname, collectionName) => client.db(dbname).collection(collectionName);
 
-// Route for user signup
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'uploads/');
+    },
+    filename: (req, file, cb) => {
+        const uniqueName = `${Date.now()}-${file.originalname}`;
+        cb(null, uniqueName);
+    }
+});
+const upload = multer({ storage });
+
+// Serve static files from the uploads directory
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+app.get('/', (req, res) => {
+    res.send('Simple CRUD is running');
+});
+
+// ********* CRUD OPERATIONS *********
+
+// Packages CRUD
+app.get('/packages', async (req, res) => {
+    const result = await getCollection('Cloudcompany', 'packages').find().toArray();
+    res.send(result);
+});
+
+app.get('/packages/:id', async (req, res) => {
+    const { id } = req.params;
+    const package = await getCollection('Cloudcompany', 'packages').findOne({ _id: new ObjectId(id) });
+    package ? res.json(package) : res.status(404).json({ message: 'Package not found' });
+});
+
+app.post('/addpackages', async (req, res) => {
+    const packageData = req.body;
+    const result = await getCollection('Cloudcompany', 'packages').insertOne(packageData);
+    res.json({ insertedId: result.insertedId });
+});
+
+// Users CRUD
 app.post('/signup', async (req, res) => {
-  const { name, email, password, country, address, phone } = req.body;
-  const users = getCollection('users');
+    const { name, email, password, country, address, phone } = req.body;
+    const users = getCollection('Cloudcompany', 'users');
 
-  try {
     const existingUser = await users.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ message: 'Email already exists' });
+        return res.status(400).json({ message: 'Email already exists' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = { name, email, password: hashedPassword, country, address, phone };
-
     await users.insertOne(newUser);
     res.json({ message: 'User signed up successfully', user: newUser });
-  } catch (error) {
-    console.error('Error signing up user:', error);
-    res.status(500).json({ message: 'Error signing up user', error });
-  }
 });
 
-// Route for user login
 app.post('/login', async (req, res) => {
-  const { email, password } = req.body;
-  const users = getCollection('users');
+    const { email, password } = req.body;
+    const users = getCollection('Cloudcompany', 'users');
 
-  try {
     const user = await users.findOne({ email });
-    if (!user) {
-      return res.status(400).json({ message: 'User not found' });
-    }
+    if (!user) return res.status(400).json({ message: 'User not found' });
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
+    if (!isMatch) return res.status(400).json({ message: 'Wrong password' });
 
     const token = jwt.sign(
-      { id: user._id, email: user.email, role: user.role },
-      process.env.JWT_SECRET || 'defaultSecretKey',
-      { expiresIn: '2h' }
+        { id: user._id, email: user.email, role: user.role },
+        process.env.JWT_SECRET || 'defaultSecretKey',
+        { expiresIn: '12h' }
     );
 
-    res.json({ message: 'Login successful', token });
-  } catch (error) {
-    console.error('Error logging in user:', error);
-    res.status(500).json({ message: 'Error logging in user', error });
-  }
+    res.cookie('userToken', token, { httpOnly: true, secure: false, sameSite: 'none' })
+        .send({ success: true });
 });
 
-// Route to add a new package
-app.post('/addpackages', async (req, res) => {
-  const packages = getCollection('packages');
-  const packageData = req.body;
-
-  try {
-    const result = await packages.insertOne(packageData);
-    res.json({ insertedId: result.insertedId });
-  } catch (error) {
-    console.error('Error adding package:', error);
-    res.status(500).json({ message: 'Error adding package', error });
-  }
+app.post('/userData', async (req, res) => {
+    const { email } = req.body;
+    const user = await getCollection('Cloudcompany', 'users').findOne({ email });
+    res.send(user);
 });
 
-// Route to fetch all projects
-app.get('/projects', async (req, res) => {
-  const projects = getCollection('projects');
-
-  try {
-    const projectsList = await projects.find({}).toArray();
-    res.json(projectsList);
-  } catch (error) {
-    console.error('Error fetching projects:', error);
-    res.status(500).json({ message: 'Error fetching projects', error });
-  }
+// Vendors CRUD
+app.get('/vendor', async (req, res) => {
+    const result = await getCollection('Ofs', 'vendor').find().toArray();
+    res.send(result);
 });
 
-
-
-// API to fetch all clients
-app.get('/client-ls', async (req, res) => {
-  const clients = getCollection('clients'); // Correctly accessing the 'clients' collection
-  try {
-    const clientsList = await clients.find({}).toArray(); // Fetching all documents from the 'clients' collection
-    res.json(clientsList);
-  } catch (error) {
-    console.error('Error fetching clients:', error);
-    res.status(500).json({ message: 'Error fetching clients' });
-  }
+app.post('/addvendor', async (req, res) => {
+    const newPost = req.body;
+    const result = await getCollection('Ofs', 'vendor').insertOne(newPost);
+    res.send(result);
 });
 
-
-
-// Route to fetch all projects
-app.get('/admin-ls', async (req, res) => {
-  const admin = getCollection('admin'); // Ensure the collection name is 'admin'
-  try {
-      const adminList = await admin.find({}).toArray();
-      res.json(adminList);
-  } catch (error) {
-      console.error('Error fetching admins:', error);
-      res.status(500).json({ message: 'Error fetching admins' });
-  }
-});
-
-
-// Route to fetch all employees
-app.get('/employees', async (req, res) => {
-  const employees = getCollection('employees');
-
-  try {
-    const employeesList = await employees.find({}).toArray();
-    res.json(employeesList);
-  } catch (error) {
-    console.error('Error fetching employees:', error);
-    res.status(500).json({ message: 'Error fetching employees', error });
-  }
-});
-
-// Route to fetch all packages
-//not getting packages 
-app.get('/packages', async (req, res) => {
-  const packages = getCollection('packages');
-
-  try {
-    const packagesList = await packages.find({}).toArray();
-    res.json(packagesList);
-  } catch (error) {
-    console.error('Error fetching packages:', error);
-    res.status(500).json({ message: 'Error fetching packages', error });
-  }
-});
-
-// Route to get a package by ID
-app.get('/packages/:id', async (req, res) => {
-  const { id } = req.params;
-  const packages = getCollection('packages');
-
-  try {
-    const package = await packages.findOne({ _id: new ObjectId(id) });
-    if (package) {
-      res.json(package);
-    } else {
-      res.status(404).json({ message: 'Package not found' });
-    }
-  } catch (error) {
-    console.error('Error fetching package:', error);
-    res.status(500).json({ message: 'Error fetching package', error });
-  }
-});
-
-// Route to delete a package by ID
-app.delete('/delpackage/:id', async (req, res) => {
-  const { id } = req.params;
-  const packages = getCollection('packages');
-
-  try {
-    const result = await packages.deleteOne({ _id: new ObjectId(id) });
-    if (result.deletedCount === 1) {
-      res.json({ message: 'Package deleted', deletedCount: 1 });
-    } else {
-      res.status(404).json({ message: 'Package not found' });
-    }
-  } catch (error) {
-    console.error('Error deleting package:', error);
-    res.status(500).json({ message: 'Error deleting package', error });
-  }
-});
-
-// Route to update a package by ID
-app.put('/update-package/:id', async (req, res) => {
-  const { id } = req.params;
-  const updatedPackage = req.body;
-  const packages = getCollection('packages');
-
-  try {
-    const result = await packages.findOneAndUpdate(
-      { _id: new ObjectId(id) },
-      { $set: updatedPackage },
-      { returnOriginal: false }
-    );
-    if (result.value) {
-      res.json({ message: 'Package updated successfully', updatedPackage: result.value });
-    } else {
-      res.status(404).json({ message: 'Package not found' });
-    }
-  } catch (error) {
-    console.error('Error updating package:', error);
-    res.status(500).json({ message: 'Error updating package', error });
-  }
+app.delete('/delvendor/:id', async (req, res) => {
+    const id = req.params.id;
+    const result = await getCollection('Ofs', 'vendor').deleteOne({ _id: new ObjectId(id) });
+    res.send(result);
 });
 
 
 
 
-// Start the server
+// ********* Place Orders *********
+app.post('/addOrder', async (req, res) => {
+    const newPost = req.body;
+    const result = await getCollection('Cloudcompany', 'orders').insertOne(newPost);
+    res.send(result);
+});
+
+
+// ********* PAYMENT ROUTES *********
+
+
+// payment intent
+app.post('/createPaymentIntent', async (req, res) => {
+    const {price} = req.body;
+    // console.log(price)
+    const amount = parseInt(price*100);
+    // console.log('amount:',amount,'|', 'price: ', price)
+
+    const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: 'usd',
+        payment_method_types: [
+            'card'
+        ]
+    }) ;
+
+    res.send({
+        clientSecret:paymentIntent.client_secret
+    })
+})
+app.post('/create-checkout-session', async (req, res) => {
+    const { items } = req.body; // Array of items to purchase
+
+    const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: items.map(item => ({
+            price_data: {
+                currency: 'usd', // Change this to your desired currency
+                product_data: {
+                    name: item.name,
+                    description: item.description,
+                },
+                unit_amount: item.amount * 100, // Amount in cents
+            },
+            quantity: item.quantity,
+        })),
+        mode: 'payment',
+        success_url: `${process.env.FRONTEND_URL}/payment-success`, // Change to your success URL
+        cancel_url: `${process.env.FRONTEND_URL}/payment-failure`, // Change to your cancel URL
+    });
+
+    res.json({ id: session.id });
+});
+
+// ********* FILE UPLOAD OPERATIONS *********
+
+app.post('/pdfuploader', upload.single('pdffile'), async (req, res) => {
+    const { pdfname } = req.body;
+    const fileLocation = req.file.path.replace(/\\/g, '/'); // Normalize path for web
+
+    const newPdf = { pdfName: pdfname, fileLocation };
+    const result = await getCollection('Ofs', 'pdfs').insertOne(newPdf);
+    console.log('successful upload :pdf');
+    res.json({ insertedId: result.insertedId, fileLocation });
+});
+
+app.get('/uploads/:filename', async (req, res) => {
+    const filename = req.params.filename;
+    const pdfDocument = await getCollection('Ofs', 'pdfs').findOne({ fileLocation: { $regex: filename } });
+
+    pdfDocument
+        ? res.sendFile(path.join(__dirname, pdfDocument.fileLocation))
+        : res.status(404).send('File not found');
+});
+
+// ********* RUN SERVER *********
 app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
+    console.log(`Server running at http://localhost:${port}`);
 });
