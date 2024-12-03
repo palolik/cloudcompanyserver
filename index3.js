@@ -121,10 +121,18 @@ app.post('/login', async (req, res) => {
 });
 
 app.post('/userData', async (req, res) => {
-    const { email } = req.body;
-    const user = await getCollection('Cloudcompany', 'users').findOne({ email });
+    const {userEmail} = req.body;
+    const user = await getCollection('Cloudcompany', 'users').findOne({email: userEmail});
     res.send(user);
 });
+
+// find every order by email
+app.post('/findAllOrdersByEmail', async (req, res) => {
+    const { userEmail } = req.body;
+    const users = await getCollection('Cloudcompany', 'orders').find({ email: userEmail }).toArray();
+    res.send(users);
+});
+
 
 // Vendors CRUD
 app.get('/vendor', async (req, res) => {
@@ -203,14 +211,36 @@ app.post('/create-checkout-session', async (req, res) => {
 
 // ********* FILE UPLOAD OPERATIONS *********
 
-app.post('/pdfuploader', upload.single('pdffile'), async (req, res) => {
-    const { pdfname } = req.body;
-    const fileLocation = req.file.path.replace(/\\/g, '/'); // Normalize path for web
+// app.post('/pdfuploader', upload.single('pdffile'), async (req, res) => {
+//     const { pdfname } = req.body;
+//     const { tempOrderId } = req.body;
+//     const fileLocation = req.file.path.replace(/\\/g, '/'); // Normalize path for web
 
-    const newPdf = { pdfName: pdfname, fileLocation };
-    const result = await getCollection('Ofs', 'pdfs').insertOne(newPdf);
-    console.log('successful upload :pdf');
-    res.json({ insertedId: result.insertedId, fileLocation });
+//     const newPdf = { pdfName: pdfname, tempOrderId: tempOrderId, fileLocation };
+//     const result = await getCollection('Ofs', 'pdfs').insertOne(newPdf);
+//     console.log('successful upload :pdf');
+//     res.json({ insertedId: result.insertedId, fileLocation });
+// });
+
+app.post('/pdfuploader', upload.single('pdffile'), async (req, res) => {
+    try {
+        // Check if file was uploaded
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded.' });
+        }
+
+        const { pdfname, tempOrderId } = req.body;
+        const fileLocation = req.file.path.replace(/\\/g, '/'); // Normalize path for web
+
+        const newPdf = { pdfName: pdfname, tempOrderId: tempOrderId, fileLocation };
+        const result = await getCollection('Ofs', 'pdfs').insertOne(newPdf);
+
+        console.log('Successful upload: pdf');
+        res.status(201).json({ insertedId: result.insertedId, fileLocation });
+    } catch (error) {
+        console.error('Error uploading PDF:', error);
+        res.status(500).json({ error: 'Internal server error.' });
+    }
 });
 
 app.get('/uploads/:filename', async (req, res) => {
