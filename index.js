@@ -1,4 +1,6 @@
 require('dotenv').config();
+
+const Joi = require('joi');
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
@@ -6,7 +8,7 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
 const bodyParser = require('body-parser');
-const mongoose = require('mongoose');   
+const mongoose = require('mongoose');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY); // Include Stripe
 
@@ -20,7 +22,11 @@ app.use(cors({
         'http://localhost:5174',
         'https://crudapp-beb6a.web.app',
         'http://10.0.2.2:5173',
-        'http://10.0.2.2:5174'
+        'http://10.0.2.2:5174',
+        'http://www.cloudcompany.cc/',
+        'https://www.cloudcompany.cc/',
+        'http://cloudcompany.cc/',
+        'https://cloudcompany.cc/',
     ],
     credentials: true
 }));
@@ -44,7 +50,7 @@ client.connect()
 
 // Define dynamic collection access function
 const getCollection = (dbname, collectionName) => client.db(dbname).collection(collectionName);
-
+// const mapCollection = client.db('Ofs').collection('mapdata');
 // Configure multer for file uploads
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -66,6 +72,51 @@ app.get('/', (req, res) => {
 
 // ********* CRUD OPERATIONS *********
 
+
+//Map CRUD operations 
+app.get('/map', async (req, res) => {
+    const result = await getCollection('ofs', 'mapdata').find().toArray();
+    res.send(result);
+});
+
+app.post('/addmap', async (req, res) => {
+    const newPost = req.body;
+    console.log(newPost);
+    const result = await getCollection('ofs', 'mapdata').insertOne(newPost);
+    res.send(result);
+});
+
+app.delete('/delmap/:id', async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    console.log('delete: ');
+    const result = await getCollection('ofs', 'mapdata').deleteOne(query);
+    res.send(result);
+});
+
+// update
+app.put('/upmap/:id', async (req, res) => {
+    const id = req.params.id;
+    const updatedData = req.body;
+
+    try {
+        const query = { _id: new ObjectId(id) };
+        const update = { $set: updatedData };
+
+        const result = await getCollection('Cloudcompany', 'mapdata').updateOne(query, update);
+
+        if (result.matchedCount === 0) {
+            return res.status(404).send({ message: 'Map not found' });
+        }
+
+        res.send({ message: 'Map updated successfully', result });
+    } catch (error) {
+        console.error('Update error:', error);
+        res.status(500).send({ message: "Error: " + error });
+    }
+});
+
+
 // Packages CRUD
 app.get('/packages', async (req, res) => {
     const result = await getCollection('Cloudcompany', 'packages').find().toArray();
@@ -74,8 +125,20 @@ app.get('/packages', async (req, res) => {
 
 app.get('/packages/:id', async (req, res) => {
     const { id } = req.params;
-    const package = await getCollection('Cloudcompany', 'packages').findOne({ _id: new ObjectId(id) });
-    package ? res.json(package) : res.status(404).json({ message: 'Package not found' });
+    // const id = packageId
+    // console.log('package id: ',id)
+    // Validate the ObjectId format (24-character hex string)
+    if (ObjectId.isValid(id)) {
+        try {
+            const package = await getCollection('Cloudcompany', 'packages').findOne({ _id: new ObjectId(id) });
+            package ? res.json(package) : res.status(404).json({ message: 'Package not found' });
+            // console.log('package data: ',package)
+        } catch (error) {
+            res.status(500).json({ message: 'Internal server error', error: error.message });
+        }
+    } else {
+        res.status(400).json({ message: 'Invalid package ID format' });
+    }
 });
 
 app.post('/addpackages', async (req, res) => {
@@ -121,9 +184,11 @@ app.post('/login', async (req, res) => {
 });
 
 app.post('/userData', async (req, res) => {
-    const { email } = req.body;
-    const user = await getCollection('Cloudcompany', 'users').findOne({ email });
+    const { userEmail } = req.body;
+    // console.log('Email ',userEmail);
+    const user = await getCollection('Cloudcompany', 'users').findOne({ email: userEmail });
     res.send(user);
+    // console.log('User data ',user);
 });
 
 // Vendors CRUD
@@ -148,6 +213,16 @@ app.delete('/delvendor/:id', async (req, res) => {
 
 
 // ********* Place Orders *********
+
+// find every order by email
+app.post('/findAllOrdersByEmail', async (req, res) => {
+    const { userEmail } = req.body;
+    // console.log('user order by mail', userEmail)
+    const order = await getCollection('Cloudcompany', 'orders').findOne({ email: userEmail });
+    res.send(order);
+    // console.log(order)
+});
+
 app.post('/addOrder', async (req, res) => {
     const newPost = req.body;
     const result = await getCollection('Cloudcompany', 'orders').insertOne(newPost);
@@ -160,9 +235,9 @@ app.post('/addOrder', async (req, res) => {
 
 // payment intent
 app.post('/createPaymentIntent', async (req, res) => {
-    const {price} = req.body;
+    const { price } = req.body;
     // console.log(price)
-    const amount = parseInt(price*100);
+    const amount = parseInt(price * 100);
     // console.log('amount:',amount,'|', 'price: ', price)
 
     const paymentIntent = await stripe.paymentIntents.create({
@@ -171,10 +246,10 @@ app.post('/createPaymentIntent', async (req, res) => {
         payment_method_types: [
             'card'
         ]
-    }) ;
+    });
 
     res.send({
-        clientSecret:paymentIntent.client_secret
+        clientSecret: paymentIntent.client_secret
     })
 })
 app.post('/create-checkout-session', async (req, res) => {
@@ -221,6 +296,205 @@ app.get('/uploads/:filename', async (req, res) => {
         ? res.sendFile(path.join(__dirname, pdfDocument.fileLocation))
         : res.status(404).send('File not found');
 });
+
+// faq CRUD operations 
+app.get('/faq', async (req, res) => {
+    const result = await getCollection('Cloudcompany', 'faq').find().toArray();
+    res.send(result);
+});
+app.post('/addfaq', async (req, res) => {
+    const newPost = req.body;
+    console.log(newPost);
+    const result = await getCollection('Cloudcompany', 'faq').insertOne(newPost);
+    res.send(result);
+});
+app.delete('/delfaq/:id', async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    console.log('delete: ');
+    const result = await getCollection('Cloudcompany', 'faq').deleteOne(query);
+    res.send(result);
+});
+
+
+//Map CRUD operations 
+app.get('/map', async (req, res) => {
+    const result = await getCollection('Cloudcompany', 'mapdata').find().toArray();
+    res.send(result);
+});
+
+app.post('/addmap', async (req, res) => {
+    const newPost = req.body;
+    console.log(newPost);
+    const result = await getCollection('Cloudcompany', 'mapdata').insertOne(newPost);
+    res.send(result);
+});
+
+app.delete('/delmap/:id', async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    console.log('delete: ');
+    const result = await getCollection('Cloudcompany', 'mapdata').deleteOne(query);
+    res.send(result);
+});
+
+
+// Team CRUD operations 
+app.get('/team', async (req, res) => {
+    const result = await getCollection('Cloudcompany', 'team').find().toArray();
+    res.send(result);
+});
+app.post('/addteam', async (req, res) => {
+    const newPost = req.body;
+    console.log(newPost);
+    const result = await getCollection('Cloudcompany', 'team').insertOne(newPost);
+    res.send(result);
+});
+app.delete('/delteam/:id', async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    console.log('delete:');
+    const result = await getCollection('Cloudcompany', 'team').deleteOne(query);
+    res.send(result);
+});
+
+// Coupon CRUD operations 
+app.get('/coupon', async (req, res) => {
+    const result = await getCollection('Cloudcompany', 'coupons').find().toArray();
+    res.send(result);
+});
+app.post('/addcoupon', async (req, res) => {
+    const newPost = req.body;
+    console.log(newPost);
+    const result = await getCollection('Cloudcompany', 'coupons').insertOne(newPost);
+    res.send(result);
+});
+app.delete('/delcoupon/:id', async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    console.log('delete:');
+    const result = await getCollection('Cloudcompany', 'coupons').deleteOne(query);
+    res.send(result);
+});
+
+//Category CRUD operations 
+app.get('/category', async (req, res) => {
+    const result = await getCollection('Cloudcompany', 'category').find().toArray();
+    res.send(result);
+});
+app.post('/addcategory', async (req, res) => {
+    const newPost = req.body;
+    console.log(newPost);
+    const result = await getCollection('Cloudcompany', 'category').insertOne(newPost);
+    res.send(result);
+});
+app.delete('/delcategory/:id', async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    console.log('delete:');
+    const result = await getCollection('Cloudcompany', 'category').deleteOne(query);
+    res.send(result);
+});
+
+
+
+
+
+// reusable code
+app.post('/mapAction', async (req, res) => {
+    // Validate input
+    const schema = Joi.object({
+        action: Joi.string().valid('create', 'read', 'update', 'delete').required(),
+        data: Joi.object().required()
+    });
+    
+    const { error } = schema.validate(req.body);
+    if (error) return res.status(400).send({ message: error.details[0].message });
+    const { action, data } = req.body;
+    try {
+        const collection = getCollection('Cloudcompany', 'mapdata');
+        let result;
+
+        switch (action) {
+            case 'create':
+                if (!data.name || !data.value) return res.status(400).send({ message: 'Invalid data' });
+                result = await collection.insertOne(data);
+                res.send({ message: 'Certificate created successfully', result });
+                break;
+            case 'read':
+                result = await collection.find().toArray();
+                res.send(result);
+                break;
+            case 'update':
+                if (!data.id || !ObjectId.isValid(data.id)) return res.status(400).send({ message: 'Invalid ID format' });
+                const { id, ...updateFields } = data;
+                result = await collection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: updateFields }
+                );
+                if (result.matchedCount === 0) return res.status(404).send({ message: 'Certificate not found' });
+                res.send({ message: 'Certificate updated successfully', result });
+                break;
+            case 'delete':
+                if (!data.id || !ObjectId.isValid(data.id)) return res.status(400).send({ message: 'Invalid ID format' });
+                result = await collection.deleteOne({ _id: new ObjectId(data.id) });
+                res.send({ message: 'Certificate deleted successfully', result });
+                break;
+            default:
+                res.status(400).send({ message: 'Invalid action' });
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).send({ message: 'Internal server error' });
+    }
+});
+
+
+
+// the function
+async function handleCertificateAction(collectionName, action, data) {
+    // Validate input
+    const schema = Joi.object({
+        action: Joi.string().valid('create', 'read', 'update', 'delete').required(),
+        data: Joi.object().required()
+    });
+    
+    const { error } = schema.validate({ action, data });
+    if (error) return { status: 400, message: error.details[0].message };
+    
+    try {
+        const collection = getCollection('Cloudcompany', collectionName);
+        let result;
+
+        switch (action) {
+            case 'create':
+                if (!data.name || !data.value) return { status: 400, message: 'Invalid data' };
+                result = await collection.insertOne(data);
+                return { status: 200, message: 'Certificate created successfully', result };
+            case 'read':
+                result = await collection.find().toArray();
+                return { status: 200, result };
+            case 'update':
+                if (!data.id || !ObjectId.isValid(data.id)) return { status: 400, message: 'Invalid ID format' };
+                const { id, ...updateFields } = data;
+                result = await collection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: updateFields }
+                );
+                if (result.matchedCount === 0) return { status: 404, message: 'Certificate not found' };
+                return { status: 200, message: 'Certificate updated successfully', result };
+            case 'delete':
+                if (!data.id || !ObjectId.isValid(data.id)) return { status: 400, message: 'Invalid ID format' };
+                result = await collection.deleteOne({ _id: new ObjectId(data.id) });
+                return { status: 200, message: 'Certificate deleted successfully', result };
+            default:
+                return { status: 400, message: 'Invalid action' };
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        return { status: 500, message: 'Internal server error' };
+    }
+}
 
 // ********* RUN SERVER *********
 app.listen(port, () => {
