@@ -55,6 +55,12 @@ async function run() {
       const categoryCollection = client.db('Cloudcompany').collection('category');
       const teamCollection = client.db('Cloudcompany').collection('team');
       const mapCollection = client.db('Cloudcompany').collection('mapdata');
+      const employeeCollection = client.db('Cloudcompany').collection('employees');
+      const tasksCollection = client.db('Cloudcompany').collection('tasks');
+
+
+
+      
 
 
 
@@ -241,6 +247,107 @@ app.delete('/deladvertise/:id', async (req, res) => {
   const result = await advertiseCollection.deleteOne(query);
   res.send(result);
 });
+
+//                                              Employees CRUD operations 
+app.get('/employees', async(req, res) =>{
+  const result = await employeeCollection.find().toArray();
+  res.send(result);
+});
+app.post('/addemployee', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await employeeCollection.insertOne(newPost);
+res.send(result);
+});
+app.delete('/delemployee/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete:');
+  const result = await employeeCollection.deleteOne(query);
+  res.send(result);
+});
+//                                             Tasks CRUD operations 
+app.get('/tasks', async(req, res) =>{
+  const result = await tasksCollection.find().toArray();
+  res.send(result);
+});
+app.post('/addtask', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await tasksCollection.insertOne(newPost);
+res.send(result);
+});
+app.delete('/deltask/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete:');
+  const result = await tasksCollection.deleteOne(query);
+  res.send(result);
+});
+
+
+app.put('/comptask/:id', async (req, res) => {
+    const id = req.params.id;
+
+    // Ensure ID is a valid MongoDB ObjectId
+    if (!ObjectId.isValid(id)) {
+        return res.status(400).json({ message: "Invalid task ID format" });
+    }
+
+    const filter = { _id: new ObjectId(id), tstatus: 'Accepted' };
+    const update = {
+        $set: {  
+            tstatus: 'Completed',  // Ensure correct field name
+            completedAt: new Date().toISOString(), // Optional: Add completion timestamp
+        }
+    };
+
+    try {
+        const result = await tasksCollection.updateOne(filter, update);
+
+        if (result.matchedCount === 0) {
+            return res.status(404).json({ message: 'No pending task found with the provided ID' });
+        }
+
+        res.json({ message: "Task marked as completed", result });
+    } catch (error) {
+        console.error('Error updating task:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
+app.put('/accepttask/:id', async (req, res) => {
+  const id = req.params.id;
+  const { taptr, tdt } = req.body; // Get acceptor ID & calculated due time
+
+  // Check if taptr and tdt are provided
+  if (!taptr || !tdt) {
+      return res.status(400).json({ message: 'Missing required fields (taptr or tdt)' });
+  }
+
+  const filter = { _id: new ObjectId(id), tstatus: 'pending' };
+  const update = {
+      $set: {  
+        taptr,      // Save who accepted the task
+        tstatus: 'Accepted', // Update task status
+        tdt              // Set calculated due time
+      }
+  };
+
+  try {
+      const result = await tasksCollection.updateOne(filter, update);
+
+      if (result.matchedCount === 0) {
+          return res.status(404).json({ message: 'No pending task found or task already accepted' });
+      }
+
+      res.json({ message: "Task accepted successfully", result });
+  } catch (error) {
+      console.error('Error accepting task:', error);
+      res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 
 app.post('/addclasses', async (req, res) => {
 const newPost = req.body;
