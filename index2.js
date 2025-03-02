@@ -267,10 +267,24 @@ app.delete('/delemployee/:id', async (req, res) => {
   res.send(result);
 });
 //                                             Tasks CRUD operations 
-app.get('/tasks', async(req, res) =>{
+
+app.get('/alltasks', async(req, res) =>{
   const result = await tasksCollection.find().toArray();
   res.send(result);
+})
+app.get('/tasks', async (req, res) => {
+  try {
+    // Filter tasks where tstatus is NOT equal to "Done"
+    const result = await tasksCollection.find({ tstatus: { $ne: 'Done' } }).toArray();
+    console.log(result); // Log the filtered results for debugging
+    res.send(result);
+  } catch (error) {
+    console.error("Error fetching tasks:", error);
+    res.status(500).send("Error fetching tasks");
+  }
 });
+
+
 app.post('/addtask', async (req, res) => {
 const newPost = req.body;
 console.log(newPost);
@@ -285,7 +299,15 @@ app.delete('/deltask/:id', async (req, res) => {
   res.send(result);
 });
 
+const formatDateTime = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0'); // Months are 0-based
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
 
+  return `${year}-${month}-${day}T${hours}:${minutes}:00`;
+};
 app.put('/comptask/:id', async (req, res) => {
     const id = req.params.id;
 
@@ -298,7 +320,7 @@ app.put('/comptask/:id', async (req, res) => {
     const update = {
         $set: {  
             tstatus: 'Completed',  // Ensure correct field name
-            completedAt: new Date().toISOString(), // Optional: Add completion timestamp
+            completedAt: formatDateTime(new Date()), // Optional: Add completion timestamp
         }
     };
 
@@ -332,6 +354,33 @@ app.put('/accepttask/:id', async (req, res) => {
         tstatus: 'Accepted', // Update task status
         tdt              // Set calculated due time
       }
+  };
+
+  try {
+      const result = await tasksCollection.updateOne(filter, update);
+
+      if (result.matchedCount === 0) {
+          return res.status(404).json({ message: 'No pending task found or task already accepted' });
+      }
+
+      res.json({ message: "Task accepted successfully", result });
+  } catch (error) {
+      console.error('Error accepting task:', error);
+      res.status(500).json({ message: 'Internal server error' });
+  }
+});
+app.put('/taskfeedback/:id', async (req, res) => {
+  const id = req.params.id;
+  const { trating, tfeedback } = req.body; // Get acceptor ID & calculated due time
+
+
+  const filter = { _id: new ObjectId(id), tstatus: 'Completed' };
+  const update = {
+    $set: {
+      trating: trating,   // Update task rating
+      tfeedback: tfeedback, // Update task feedback
+      tstatus: 'Done' // Mark task as completed
+    }
   };
 
   try {
