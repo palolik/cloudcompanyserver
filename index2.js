@@ -4,7 +4,9 @@ require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const app = express();
 const port = process.env.PORT || 5000;
-
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const JWT_SECRET = process.env.JWT_SECRET || '237a3f9e2d1cc34bc6d731b9c1640d4a2dc821cd199ff6a37562643b5090e61f'; 
 // middleware
 // app.use(cors({
 //     origin: `https://samia-11824.web.app`
@@ -248,7 +250,33 @@ app.delete('/deladvertise/:id', async (req, res) => {
   res.send(result);
 });
 
-//                                              Employees CRUD operations 
+//
+// 
+//                                               Employees CRUD operations 
+
+app.get("/employeeprofile/:id", async (req, res) => {
+  const id = req.params.id;
+
+  try {
+    // Validate MongoDB ObjectId
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid Employee ID" });
+    }
+
+    // Query database using findOne()
+    const employee = await employeeCollection.findOne({ _id: new ObjectId(id) });
+
+    if (!employee) {
+      return res.status(404).json({ success: false, message: "Employee not found" });
+    }
+
+    res.status(200).json(employee);
+  } catch (error) {
+    console.error("Error fetching employee:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
 app.get('/employees', async(req, res) =>{
   const result = await employeeCollection.find().toArray();
   res.send(result);
@@ -266,6 +294,71 @@ app.delete('/delemployee/:id', async (req, res) => {
   const result = await employeeCollection.deleteOne(query);
   res.send(result);
 });
+//                                              Employees login operations 
+
+
+// Employee login
+app.post('/employeelogin', async (req, res) => {
+  const { remail, rpass } = req.body;
+
+  // Validate input
+  if (!remail || !rpass) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Email and password are required' 
+    });
+  }
+
+  try {
+    // Find the user by email
+    const user = await employeeCollection.findOne({ remail });
+
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
+    }
+
+    // Compare stored password with the provided password (insecure!)
+    if (user.rpass !== rpass) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Invalid password' 
+      });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { userId: user._id, email: user.remail,  rname: user.rname,
+       rppic: user.rppic },
+      process.env.JWT_SECRET, // Store JWT_SECRET in .env
+      { expiresIn: '1h' } // Token expires in 1 hour
+    );
+
+    // Return the response with the token
+    return res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      token, // Provide the token to the client
+      user: {
+        id: user._id,
+        remail: user.remail,
+        rname: user.rname,
+        rppic: user.rppic
+      },
+    });
+
+  } catch (err) {
+    console.error('Login error: ', err);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error. Please try again later.' 
+    });
+  }
+});
+
+
 //                                             Tasks CRUD operations 
 
 app.get('/alltasks', async(req, res) =>{
@@ -371,13 +464,12 @@ app.put('/accepttask/:id', async (req, res) => {
 });
 app.put('/taskfeedback/:id', async (req, res) => {
   const id = req.params.id;
-  const { trating, tfeedback } = req.body; // Get acceptor ID & calculated due time
+  const { tfeedback } = req.body; // Get acceptor ID & calculated due time
 
 
   const filter = { _id: new ObjectId(id), tstatus: 'Completed' };
   const update = {
     $set: {
-      trating: trating,   // Update task rating
       tfeedback: tfeedback, // Update task feedback
       tstatus: 'Done' // Mark task as completed
     }
