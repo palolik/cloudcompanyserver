@@ -330,8 +330,14 @@ app.post('/employeelogin', async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { userId: user._id, email: user.remail,  rname: user.rname,
-       rppic: user.rppic },
+      {
+       userId: user._id, 
+       email: user.remail,  
+       rname: user.rname,
+       rppic: user.rppic,   
+       rdep: user.rdep,
+       rsubdep: user.rsubdep,
+       esprts: user.esprts },
       process.env.JWT_SECRET, // Store JWT_SECRET in .env
       { expiresIn: '1h' } // Token expires in 1 hour
     );
@@ -345,7 +351,11 @@ app.post('/employeelogin', async (req, res) => {
         id: user._id,
         remail: user.remail,
         rname: user.rname,
-        rppic: user.rppic
+        rppic: user.rppic,
+        rdep: user.rdep,
+        rsubdep: user.rsubdep,
+        esprts: user.esprts
+
       },
     });
 
@@ -367,7 +377,6 @@ app.get('/alltasks', async(req, res) =>{
 })
 app.get('/tasks', async (req, res) => {
   try {
-    // Filter tasks where tstatus is NOT equal to "Done"
     const result = await tasksCollection.find({ tstatus: { $ne: 'Done' } }).toArray();
     console.log(result); // Log the filtered results for debugging
     res.send(result);
