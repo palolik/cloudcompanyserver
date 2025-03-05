@@ -60,12 +60,6 @@ async function run() {
       const employeeCollection = client.db('Cloudcompany').collection('employees');
       const tasksCollection = client.db('Cloudcompany').collection('tasks');
 
-
-
-      
-
-
-
 app.get('/', (req, res) => {
           res.send('Simple CRUD is running');
 });
@@ -276,7 +270,6 @@ app.get("/employeeprofile/:id", async (req, res) => {
     res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 });
-
 app.get('/employees', async(req, res) =>{
   const result = await employeeCollection.find().toArray();
   res.send(result);
@@ -367,10 +360,7 @@ app.post('/employeelogin', async (req, res) => {
     });
   }
 });
-
-
 //                                             Tasks CRUD operations 
-
 app.get('/alltasks', async(req, res) =>{
   const result = await tasksCollection.find().toArray();
   res.send(result);
@@ -385,8 +375,6 @@ app.get('/tasks', async (req, res) => {
     res.status(500).send("Error fetching tasks");
   }
 });
-
-
 app.post('/addtask', async (req, res) => {
 const newPost = req.body;
 console.log(newPost);
@@ -400,7 +388,6 @@ app.delete('/deltask/:id', async (req, res) => {
   const result = await tasksCollection.deleteOne(query);
   res.send(result);
 });
-
 const formatDateTime = (date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0'); // Months are 0-based
@@ -412,7 +399,6 @@ const formatDateTime = (date) => {
 };
 app.put('/comptask/:id', async (req, res) => {
     const id = req.params.id;
-
     // Ensure ID is a valid MongoDB ObjectId
     if (!ObjectId.isValid(id)) {
         return res.status(400).json({ message: "Invalid task ID format" });
@@ -439,22 +425,24 @@ app.put('/comptask/:id', async (req, res) => {
         res.status(500).json({ message: 'Internal server error' });
     }
 });
-
 app.put('/accepttask/:id', async (req, res) => {
   const id = req.params.id;
-  const { taptr, tdt } = req.body; // Get acceptor ID & calculated due time
+  const { taptr, apname,
+    apdp, tdt } = req.body; // Get acceptor ID & calculated due time
 
   // Check if taptr and tdt are provided
-  if (!taptr || !tdt) {
+  if (!taptr || !tdt || !apname || !apdp) {
       return res.status(400).json({ message: 'Missing required fields (taptr or tdt)' });
   }
 
   const filter = { _id: new ObjectId(id), tstatus: 'pending' };
   const update = {
       $set: {  
-        taptr,      // Save who accepted the task
-        tstatus: 'Accepted', // Update task status
-        tdt              // Set calculated due time
+        taptr,
+        apname,
+        apdp,      
+        tstatus: 'Accepted', 
+        tdt             
       }
   };
 
@@ -497,8 +485,6 @@ app.put('/taskfeedback/:id', async (req, res) => {
       res.status(500).json({ message: 'Internal server error' });
   }
 });
-
-
 app.post('/addclasses', async (req, res) => {
 const newPost = req.body;
 console.log(newPost);
@@ -511,7 +497,6 @@ console.log(newPost);
 const result = await feedbackCollection.insertOne(newPost);
 res.send(result);
 });
-
 app.get('/feedback', async (req, res) => {
 const cursor = feedbackCollection.find();
 const result = await cursor.toArray();
@@ -522,8 +507,6 @@ const cursor = partnersCollection.find();
 const result = await cursor.toArray();
 res.send(result);
 });
-
-
 app.get('/post/:id', async (req, res) => {
       const postId = req.params.id;
       console.log('ID', postId);
@@ -531,7 +514,6 @@ app.get('/post/:id', async (req, res) => {
       const result = await menuCollection.findOne(query);
       res.send(result);
 });
-
 app.put('/classes/:id', async (req, res) => {
 const id = req.params.id;
 const filter = { _id: new ObjectId(id) };
