@@ -1,0 +1,304 @@
+app.get('/packages', async(req, res) =>{
+    const result = await packageCollection.find().toArray();
+    res.send(result);
+});
+app.post('/addpackages', async (req, res) => {
+  const newPost = req.body;
+  console.log(newPost);
+  const result = await packageCollection.insertOne(newPost);
+  res.send(result);
+  });
+app.delete('/delpackage/:id', async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    console.log('delete: ');
+    const result = await packageCollection.deleteOne(query);
+    res.send(result);
+});
+app.get('/packages/:id', async (req, res) => {
+  const postId = req.params.id;
+  console.log('ID', postId);
+  const query = { _id: new ObjectId(postId) };
+  const result = await packageCollection.findOne(query);
+  res.send(result);
+});
+
+ //Map CRUD operations 
+ app.get('/map', async (req, res) => {
+  const result = await mapCollection.find().toArray();
+  res.send(result);
+});    
+
+app.post('/addmap', async (req, res) => {
+  const newPost = req.body;
+  console.log(newPost);
+  const result = await mapCollection.insertOne(newPost);
+  res.send(result);
+});   
+
+app.delete('/delmap/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete: ');
+  const result = await mapCollection.deleteOne(query);
+  res.send(result);
+});
+
+// faq CRUD operations 
+app.get('/faq', async(req, res) =>{
+  const result = await faqCollection.find().toArray();
+  res.send(result);
+});
+app.post('/addfaq', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await faqCollection.insertOne(newPost);
+res.send(result);
+});
+app.delete('/delfaq/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete: ');
+  const result = await faqCollection.deleteOne(query);
+  res.send(result);
+});
+
+// Reviews CRUD operations 
+app.get('/review', async(req, res) =>{
+  const result = await reviewCollection.find().toArray();
+  res.send(result);
+});
+app.post('/addreview', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await reviewCollection.insertOne(newPost);
+res.send(result);
+});
+app.delete('/delreview/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete: ');
+  const result = await reviewCollection.deleteOne(query);
+  res.send(result);
+});
+//                                                  Coupon CRUD operations 
+app.get('/coupon', async(req, res) =>{
+  const result = await couponCollection.find().toArray();
+  res.send(result);
+});
+app.post('/addcoupon', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await couponCollection.insertOne(newPost);
+res.send(result);
+});
+app.delete('/delcoupon/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete:');
+  const result = await couponCollection.deleteOne(query);
+  res.send(result);
+});
+//                                                 Service CRUD operations 
+app.get('/service', async(req, res) =>{
+  const result = await serviceCollection.find().toArray();
+  res.send(result);
+});
+app.post('/addservice', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await serviceCollection.insertOne(newPost);
+res.send(result);
+});
+app.delete('/delservice/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete:');
+  const result = await serviceCollection.deleteOne(query);
+  res.send(result);
+});
+
+//                                                 Team CRUD operations 
+app.get('/team', async(req, res) =>{
+  const result = await teamCollection.find().toArray();
+  res.send(result);
+});
+app.post('/addteam', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await teamCollection.insertOne(newPost);
+res.send(result);
+});
+app.delete('/delteam/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete:');
+  const result = await teamCollection.deleteOne(query);
+  res.send(result);
+});
+
+//                                                 Category CRUD operations 
+app.get('/category', async(req, res) =>{
+  const result = await categoryCollection.find().toArray();
+  res.send(result);
+});
+app.post('/addcategory', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await categoryCollection.insertOne(newPost);
+res.send(result);
+});
+app.delete('/delcategory/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete:');
+  const result = await categoryCollection.deleteOne(query);
+  res.send(result);
+});
+//                                                 Advertise CRUD operations 
+app.get('/advertise', async(req, res) =>{
+  const result = await advertiseCollection.find().toArray();
+  res.send(result);
+});
+app.post('/addadvertise', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await advertiseCollection.insertOne(newPost);
+res.send(result);
+});
+app.delete('/deladvertise/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete:');
+  const result = await advertiseCollection.deleteOne(query);
+  res.send(result);
+});
+//                                               Employees CRUD operations 
+app.get("/employeeprofile/:id", async (req, res) => {
+  const id = req.params.id;
+
+  try {
+    // Validate MongoDB ObjectId
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid Employee ID" });
+    }
+
+    // Query database using findOne()
+    const employee = await employeeCollection.findOne({ _id: new ObjectId(id) });
+
+    if (!employee) {
+      return res.status(404).json({ success: false, message: "Employee not found" });
+    }
+
+    res.status(200).json(employee);
+  } catch (error) {
+    console.error("Error fetching employee:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+app.get('/employees', async(req, res) =>{
+  const result = await employeeCollection.find().toArray();
+  res.send(result);
+});
+app.post('/addemployee', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await employeeCollection.insertOne(newPost);
+res.send(result);
+});
+app.delete('/delemployee/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete:');
+  const result = await employeeCollection.deleteOne(query);
+  res.send(result);
+});
+//                                               Employees login operations 
+app.post('/employeelogin', async (req, res) => {
+  const { remail, rpass } = req.body;
+
+  // Validate input
+  if (!remail || !rpass) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Email and password are required' 
+    });
+  }
+
+  try {
+    // Find the user by email
+    const user = await employeeCollection.findOne({ remail });
+
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
+    }
+
+    // Compare stored password with the provided password (insecure!)
+    if (user.rpass !== rpass) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Invalid password' 
+      });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      {
+       userId: user._id, 
+       email: user.remail,  
+       rname: user.rname,
+       rppic: user.rppic,   
+       rdep: user.rdep,
+       rsubdep: user.rsubdep,
+       esprts: user.esprts },
+      process.env.JWT_SECRET, // Store JWT_SECRET in .env
+      { expiresIn: '1h' } // Token expires in 1 hour
+    );
+
+    // Return the response with the token
+    return res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      token, // Provide the token to the client
+      user: {
+        id: user._id,
+        remail: user.remail,
+        rname: user.rname,
+        rppic: user.rppic,
+        rdep: user.rdep,
+        rsubdep: user.rsubdep,
+        esprts: user.esprts
+
+      },
+    });
+
+  } catch (err) {
+    console.error('Login error: ', err);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error. Please try again later.' 
+    });
+  }
+});
+
+//                                                 feedback CRUD operations 
+
+app.post('/feedback', async (req, res) => {
+const newPost = req.body;
+console.log(newPost);
+const result = await feedbackCollection.insertOne(newPost);
+res.send(result);
+});
+app.get('/feedback', async (req, res) => {
+const cursor = feedbackCollection.find();
+const result = await cursor.toArray();
+res.send(result);
+});
+app.get('/partners', async (req, res) => {
+const cursor = partnersCollection.find();
+const result = await cursor.toArray();
+res.send(result);
+});
