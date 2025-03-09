@@ -72,11 +72,10 @@ app.get('/', (req, res) => {
     }
 });
 
-
 app.post('/addempchat', async (req, res) => {
-  const { taskId, empId, empName, text, time } = req.body;
+  const { taskId, empId, empName, text, time, sender } = req.body;
   
-  if (!taskId || !empId || !empName || !text || !time) {
+  if (!taskId || !empId || !empName || !text || !time || !sender) {
     return res.status(400).json({ message: 'Missing required fields' });
   }
 
@@ -86,7 +85,8 @@ app.post('/addempchat', async (req, res) => {
       empId,
       empName,
       text,
-      time
+      time,
+      sender
     };
     
     await employeechatCollection.insertOne(newMessage);
@@ -123,6 +123,7 @@ wss.on('connection', (ws, req) => {
       empId: msg.empId,
       empName: msg.empName,
       text: msg.text,
+      sender: msg.sender,
       time: msg.time
     };
 
