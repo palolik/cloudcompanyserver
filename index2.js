@@ -51,6 +51,7 @@ async function run() {
       const teamCollection = client.db('Cloudcompany').collection('team');
       const mapCollection = client.db('Cloudcompany').collection('mapdata');
       const employeeCollection = client.db('Cloudcompany').collection('employees');
+      const clientCollection = client.db('Cloudcompany').collection('clients');
       const tasksCollection = client.db('Cloudcompany').collection('tasks');
       // const clientchatCollection = client.db('Cloudcompany').collection('clientchat');
       const employeechatCollection = client.db('Cloudcompany').collection('employeechat');
@@ -385,7 +386,6 @@ wss.on('connection', (ws, req) => {
           });
         }
     
-        // Compare stored password with the provided password (insecure!)
         if (user.rpass !== rpass) {
           return res.status(401).json({ 
             success: false, 
@@ -397,6 +397,7 @@ wss.on('connection', (ws, req) => {
         const token = jwt.sign(
           {
            userId: user._id, 
+           role: user.role,
            email: user.remail,  
            rname: user.rname,
            rppic: user.rppic,   
@@ -414,6 +415,7 @@ wss.on('connection', (ws, req) => {
           token, // Provide the token to the client
           user: {
             id: user._id,
+            role: user.role,
             remail: user.remail,
             rname: user.rname,
             rppic: user.rppic,
@@ -432,6 +434,99 @@ wss.on('connection', (ws, req) => {
         });
       }
     });
+
+      //                                                                   Client login operations 
+
+    app.post('/addclient', async (req, res) => {
+      const newPost = req.body;
+      console.log(newPost);
+      const result = await clientCollection.insertOne(newPost);
+      res.send(result);
+      });
+      app.delete('/delclient/:id', async (req, res) => {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        console.log('delete:');
+        const result = await clientCollection.deleteOne(query);
+        res.send(result);
+      });
+      app.post('/clientlogin', async (req, res) => {
+        const { remail, rpass } = req.body;
+      
+        if (!remail || !rpass) {
+          return res.status(400).json({ 
+            success: false, 
+            message: 'Email and password are required' 
+          });
+        }
+      
+        try {
+          const user = await clientCollection.findOne({ remail });
+          if (!user) {
+            return res.status(404).json({ 
+              success: false, 
+              message: 'User not found' 
+            });
+          }
+          if (user.rpass !== rpass) {
+            return res.status(401).json({ 
+              success: false, 
+              message: 'Invalid password' 
+            });
+          }
+          const token = jwt.sign(
+            {
+             
+             userId: user._id, 
+             role: user.role,
+             email: user.remail,  
+             rname: user.rname,
+             rppic: user.rppic,},
+            process.env.JWT_SECRET, 
+            { expiresIn: '1h' } 
+          );
+          return res.status(200).json({
+            success: true,
+            message: 'Login successful',
+            token, 
+            user: {
+              id: user._id,
+              role: user.role,
+              remail: user.remail,
+              rname: user.rname,
+              rppic: user.rppic,
+            },
+          });
+      
+        } catch (err) {
+          console.error('Login error: ', err);
+          return res.status(500).json({ 
+            success: false, 
+            message: 'Internal server error. Please try again later.' 
+          });
+        }
+      });
+
+      app.get("/clientprofile/:id", async (req, res) => {
+        const id = req.params.id;
+      
+        try {
+          if (!ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, message: "Invalid Employee ID" });
+          }
+      
+          const employee = await clientCollection.findOne({ _id: new ObjectId(id) });
+      
+          if (!employee) {
+            return res.status(404).json({ success: false, message: "Employee not found" });
+          }
+      
+          res.status(200).json(employee);
+        } catch (error) {
+          console.error("Error fetching employee:", error);
+          res.status(500).json({ success: false, message: "Internal Server Error" });
+        }
+      });
     //                                                                   feedback CRUD operations 
     app.post('/feedback', async (req, res) => {
     const newPost = req.body;
