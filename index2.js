@@ -88,15 +88,18 @@ app.get('/', (req, res) => {
 });
 
 app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
-  const { projectTitle, projectBrief, packageName,  sellPrice } = req.body;
+  const { projectTitle, projectBrief, packageName,  sellPrice,buyerid, buyername, email, } = req.body;
   const attachments = req.files ? req.files.map((file) => file.path) : [];
-
+ 
   const newProduct = {
     projectTitle,
     projectBrief,
     packageName,
     sellPrice,
-    attachments, // Store the file paths here
+    buyerid,
+ buyername,
+ email,
+    attachments, 
     createdAt: new Date(),
   };
 
@@ -220,8 +223,11 @@ ws.on('close', () => {
     const postId = req.params.id;
     console.log('ID', postId);
     const query = { _id: new ObjectId(postId) };
+  
+    const result2 = await couponCollection.find().toArray();
     const result = await packageCollection.findOne(query);
-    res.send(result);
+  
+    res.send({ package: result, coupons: result2 });
   });
    //                                                                   Map CRUD operations 
    app.get('/map', async (req, res) => {
@@ -528,7 +534,10 @@ ws.on('close', () => {
            role: user.role,
            email: user.remail,  
            rname: user.rname,
-           rppic: user.rppic,},
+           rppic: user.rppic,
+           country: user.country,
+
+          },
           process.env.JWT_SECRET, 
           { expiresIn: '1h' } 
         );
@@ -542,6 +551,7 @@ ws.on('close', () => {
             remail: user.remail,
             rname: user.rname,
             rppic: user.rppic,
+            country: user.country,
           },
         });
     
@@ -723,10 +733,6 @@ const result = await menuCollection.insertOne(newPost);
 res.send(result);
 });
 
-
-
-
-    
 
         const server = app.listen(port, () => {
           console.log(`webServer is running on port: ${port}`);
