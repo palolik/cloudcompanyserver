@@ -88,7 +88,7 @@ app.get('/', (req, res) => {
 });
 
 app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
-  const { projectTitle, projectBrief, packageName,  sellPrice,buyerid, buyername, email, } = req.body;
+  const { projectTitle, projectBrief, packageName, sellPrice, buyerid, buyername, email, coupon , time } = req.body;
   const attachments = req.files ? req.files.map((file) => file.path) : [];
  
   const newProduct = {
@@ -97,9 +97,11 @@ app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
     packageName,
     sellPrice,
     buyerid,
- buyername,
- email,
+    coupon,
+    buyername,
+    email,
     attachments, 
+    time,
     createdAt: new Date(),
   };
 
