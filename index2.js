@@ -228,8 +228,16 @@ ws.on('close', () => {
   
     const result2 = await couponCollection.find().toArray();
     const result = await packageCollection.findOne(query);
-  
     res.send({ package: result, coupons: result2 });
+  });
+  app.get('/packdetails/:id', async (req, res) => {
+    const postId = req.params.id;
+    console.log('ID', postId);
+    const query = { _id: new ObjectId(postId) };
+    const result = await packageCollection.findOne(query);
+    console.log('ID', result);
+
+    res.send({ package: result  });
   });
    //                                                                   Map CRUD operations 
    app.get('/map', async (req, res) => {
