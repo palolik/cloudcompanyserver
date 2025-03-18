@@ -27,6 +27,7 @@ app.use(
     );
 app.use(express.json());
 app.use(bodyParser.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Create upload directory if it doesn't exist
 const uploadDirectory = 'uploads';
@@ -88,7 +89,7 @@ app.get('/', (req, res) => {
 });
 
 app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
-  const { projectTitle, projectBrief, packageName, sellPrice, buyerid, buyername, email, coupon , time } = req.body;
+  const { projectTitle, projectBrief, packageName, sellPrice, buyerid,packageContents, buyername, email, coupon , time } = req.body;
   const attachments = req.files ? req.files.map((file) => file.path) : [];
  
   const newProduct = {
@@ -97,6 +98,7 @@ app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
     packageName,
     sellPrice,
     buyerid,
+    packageContents,
     coupon,
     buyername,
     email,
@@ -113,6 +115,19 @@ app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
     res.status(500).send({ message: 'Failed to purchase package' });
   }
 });
+
+app.get('/orders', async (req, res) => {
+  const result = await PsoldCollection.find().toArray();
+  const updatedProducts = result.map(product => ({
+    ...product,
+    attachments: product.attachments.map(pic =>
+        pic.replace('D:\\cloudcompanyserver', 'http://localhost:5000')
+    )
+}));
+res.json(updatedProducts);
+}); 
+
+
 app.get('/empchat/:taskId', async (req, res) => {
   const taskId = req.params.taskId; 
   try {
