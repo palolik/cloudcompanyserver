@@ -11,10 +11,11 @@ const bcrypt = require('bcrypt');const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
 const JWT_SECRET = process.env.JWT_SECRET || '237a3f9e2d1cc34bc6d731b9c1640d4a2dc821cd199ff6a37562643b5090e61f'; 
 const WebSocket = require('ws');
-const http = require('http'); // Required for WebSocket integration with Express
+const server = require('http').createServer(app);
+const wss = new WebSocket.Server({ server });
+const clients = new Map();
 
-const server = http.createServer(app); // Create HTTP server with Express app
-
+app.use(express.json());
 app.use(
     cors({
         origin: [
@@ -38,8 +39,6 @@ if (!fs.existsSync(uploadDirectory)) {
 }
 const uri = `mongodb+srv://${process.env.EMAILDB}:${process.env.PASSDB}@cluster0.fagav7n.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
-const clients = new Map();
-const wss = new WebSocket.Server({ server }); // Attach the WebSocket server to the HTTP server
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -51,7 +50,7 @@ const storage = multer.diskStorage({
     cb(null, dirPath);
   },
   filename: function (req, file, cb) {
-    cb(null, Date.now() + path.extname(file.originalname)); // Ensure unique file names
+    cb(null, Date.now() + path.extname(file.originalname));
   },
 });
 
@@ -93,184 +92,197 @@ app.get('/', (req, res) => {
 
 
 
-function broadcastMessageToSpecificClient(clientId, message, type) {
-  const ws = clients.get(clientId);
-  if (ws && ws.readyState === ws.OPEN) {
-      ws.send(JSON.stringify({ type, message }));
-  }
+function broadcastMessage(identifier, message) {
+    if (clients.has(identifier)) {
+        clients.get(identifier).forEach(ws => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(message));
+            }
+        });
+    }
 }
 
 wss.on('connection', (ws, req) => {
-  const empId = req.headers['empid'];  
-  const orderId = req.headers['orderid'];
+    const empId = req.headers['empid'];
+    const orderId = req.headers['orderid'];
 
-  if (empId) {
-      clients.set(empId, ws);
-  } else if (orderId) {
-      clients.set(orderId, ws);
-  }
+    if (empId) {
+        if (!clients.has(empId)) {
+            clients.set(empId, []);
+        }
+        clients.get(empId).push(ws);
+    } else if (orderId) {
+        if (!clients.has(orderId)) {
+            clients.set(orderId, []);
+        }
+        clients.get(orderId).push(ws);
+    }
 
-  if (empId) {
-      employeechatCollection.find({ empId }).toArray()
-          .then(messages => ws.send(JSON.stringify(messages)))
-          .catch(err => console.error('Error sending employee messages:', err));
-  } else if (orderId) {
-      clientchatCollection.find({ orderId }).toArray()
-          .then(messages => ws.send(JSON.stringify(messages)))
-          .catch(err => console.error('Error sending client messages:', err));
-  }
+    // Send chat history to new clients
+    if (empId) {
+        employeechatCollection.find({ empId }).toArray()
+            .then(messages => ws.send(JSON.stringify(messages)))
+            .catch(err => console.error('Error sending employee messages:', err));
+    } else if (orderId) {
+        clientchatCollection.find({ orderId }).toArray()
+            .then(messages => ws.send(JSON.stringify(messages)))
+            .catch(err => console.error('Error sending client messages:', err));
+    }
 
-  ws.on('message', async (message) => {
-      try {
-          const msg = JSON.parse(message);
+    ws.on('message', async (message) => {
+        try {
+            const msg = JSON.parse(message);
+            let newMessage;
 
-          let newMessage;
-          if (msg.taskId) { 
-              newMessage = {
-                  taskId: msg.taskId,
-                  empId: msg.empId,
-                  empName: msg.empName,
-                  text: msg.text,
-                  sender: msg.sender,
-                  time: msg.time
-              };
+            if (msg.taskId) {
+                newMessage = {
+                    taskId: msg.taskId,
+                    empId: msg.empId,
+                    empName: msg.empName,
+                    text: msg.text,
+                    sender: msg.sender,
+                    time: msg.time
+                };
 
-              const existingMessage = await employeechatCollection.findOne({
-                  taskId: msg.taskId,
-                  empId: msg.empId,
-                  text: msg.text,
-                  time: msg.time,
-                  sender: msg.sender
-              });
+                const existingMessage = await employeechatCollection.findOne({
+                    taskId: msg.taskId,
+                    empId: msg.empId,
+                    text: msg.text,
+                    time: msg.time,
+                    sender: msg.sender
+                });
 
-              if (!existingMessage) {
-                  await employeechatCollection.insertOne(newMessage);
-                  broadcastMessageToSpecificClient(msg.empId, newMessage, 'employee');
-              }
-          } else if (msg.orderId) { 
-              newMessage = {
-                  orderId: msg.orderId,
-                  bId: msg.bId,
-                  bName: msg.bName,
-                  text: msg.text,
-                  sender: msg.sender,
-                  time: msg.time
-              };
+                if (!existingMessage) {
+                    await employeechatCollection.insertOne(newMessage);
+                    broadcastMessage(msg.taskId, newMessage);
+                }
+            } else if (msg.orderId) {
+                newMessage = {
+                    orderId: msg.orderId,
+                    bId: msg.bId,
+                    bName: msg.bName,
+                    text: msg.text,
+                    sender: msg.sender,
+                    time: msg.time
+                };
 
-              const existingMessage = await clientchatCollection.findOne({
-                  orderId: msg.orderId,
-                  bId: msg.bId,
-                  text: msg.text,
-                  time: msg.time,
-                  sender: msg.sender
-              });
+                const existingMessage = await clientchatCollection.findOne({
+                    orderId: msg.orderId,
+                    bId: msg.bId,
+                    text: msg.text,
+                    time: msg.time,
+                    sender: msg.sender
+                });
 
-              if (!existingMessage) {
-                  await clientchatCollection.insertOne(newMessage);
-                  broadcastMessageToSpecificClient(msg.empId, newMessage, 'client');
-              }
-          }
-      } catch (err) {
-          console.error('Error processing WebSocket message:', err);
-      }
-  });
+                if (!existingMessage) {
+                    await clientchatCollection.insertOne(newMessage);
+                    broadcastMessage(msg.orderId, newMessage);
+                }
+            }
+        } catch (err) {
+            console.error('Error processing WebSocket message:', err);
+        }
+    });
 
-  ws.on('close', () => {
-      if (empId) {
-          clients.delete(empId);
-      } else if (orderId) {
-          clients.delete(orderId);
-      }
-  });
+    ws.on('close', () => {
+        if (empId && clients.has(empId)) {
+            clients.set(empId, clients.get(empId).filter(client => client !== ws));
+            if (clients.get(empId).length === 0) clients.delete(empId);
+        } else if (orderId && clients.has(orderId)) {
+            clients.set(orderId, clients.get(orderId).filter(client => client !== ws));
+            if (clients.get(orderId).length === 0) clients.delete(orderId);
+        }
+    });
 });
 
+// API Endpoints
 app.post('/addempchat', async (req, res) => {
-  const { taskId, empId, empName, text, time, sender } = req.body;
+    const { taskId, empId, empName, text, time, sender } = req.body;
 
-  if (!taskId || !empId || !empName || !text || !time || !sender) {
-      return res.status(400).json({ message: 'Missing required fields' });
-  }
+    if (!taskId || !empId || !empName || !text || !time || !sender) {
+        return res.status(400).json({ message: 'Missing required fields' });
+    }
 
-  try {
-      const existingMessage = await employeechatCollection.findOne({ taskId, empId, text, time, sender });
-      if (existingMessage) {
-          return res.status(400).json({ message: 'Duplicate message' });
-      }
+    try {
+        const existingMessage = await employeechatCollection.findOne({ taskId, empId, text, time, sender });
+        if (existingMessage) {
+            return res.status(400).json({ message: 'Duplicate message' });
+        }
 
-      const newMessage = { taskId, empId, empName, text, time, sender };
-      await employeechatCollection.insertOne(newMessage);
+        const newMessage = { taskId, empId, empName, text, time, sender };
+        await employeechatCollection.insertOne(newMessage);
 
-      res.status(201).json(newMessage); 
+        res.status(201).json(newMessage);
 
-      setTimeout(() => {
-          broadcastMessageToSpecificClient(empId, newMessage, 'employee');
-      }, 0);
-  } catch (error) {
-      console.error('Error adding employee message:', error);
-      res.status(500).json({ message: 'Error adding message' });
-  }
+        setTimeout(() => {
+            broadcastMessage(empId, newMessage);
+        }, 0);
+    } catch (error) {
+        console.error('Error adding employee message:', error);
+        res.status(500).json({ message: 'Error adding message' });
+    }
 });
 
 app.post('/addclichat', async (req, res) => {
-  const { orderId, bId, bName, text, time, sender } = req.body;
+    const { orderId, bId, bName, text, time, sender } = req.body;
 
-  if (!orderId || !bId || !bName || !text || !time || !sender) {
-      return res.status(400).json({ message: 'Missing required fields' });
-  }
+    if (!orderId || !bId || !bName || !text || !time || !sender) {
+        return res.status(400).json({ message: 'Missing required fields' });
+    }
 
-  try {
-      const existingMessage = await clientchatCollection.findOne({ orderId, bId, text, time, sender });
-      if (existingMessage) {
-          return res.status(400).json({ message: 'Duplicate message' });
-      }
+    try {
+        const existingMessage = await clientchatCollection.findOne({ orderId, bId, text, time, sender });
+        if (existingMessage) {
+            return res.status(400).json({ message: 'Duplicate message' });
+        }
 
-      const newMessage = { orderId, bId, bName, text, time, sender };
-      await clientchatCollection.insertOne(newMessage);
+        const newMessage = { orderId, bId, bName, text, time, sender };
+        await clientchatCollection.insertOne(newMessage);
 
-      res.status(201).json(newMessage); 
+        res.status(201).json(newMessage);
 
-      setTimeout(() => {
-          broadcastMessageToSpecificClient(bId, newMessage, 'client');
-      }, 0);
-  } catch (error) {
-      console.error('Error adding client message:', error);
-      res.status(500).json({ message: 'Error adding message' });
-  }
+        setTimeout(() => {
+            broadcastMessage(orderId, newMessage);
+        }, 0);
+    } catch (error) {
+        console.error('Error adding client message:', error);
+        res.status(500).json({ message: 'Error adding message' });
+    }
 });
 
-// Fetch employee chat messages by taskId
 app.get('/empchat/:taskId', async (req, res) => {
-  const { taskId } = req.params;
+    const { taskId } = req.params;
 
-  if (!taskId) {
-      return res.status(400).json({ message: 'Task ID is required' });
-  }
+    if (!taskId) {
+        return res.status(400).json({ message: 'Task ID is required' });
+    }
 
-  try {
-      const messages = await employeechatCollection.find({ taskId }).toArray();
-      res.status(200).json(messages);
-  } catch (error) {
-      console.error('Error fetching employee chat messages:', error);
-      res.status(500).json({ message: 'Error fetching messages' });
-  }
+    try {
+        const messages = await employeechatCollection.find({ taskId }).toArray();
+        res.status(200).json(messages);
+    } catch (error) {
+        console.error('Error fetching employee chat messages:', error);
+        res.status(500).json({ message: 'Error fetching messages' });
+    }
 });
 
-// Fetch client chat messages by orderId
 app.get('/clichat/:orderId', async (req, res) => {
-  const { orderId } = req.params;
+    const { orderId } = req.params;
 
-  if (!orderId) {
-      return res.status(400).json({ message: 'Order ID is required' });
-  }
+    if (!orderId) {
+        return res.status(400).json({ message: 'Order ID is required' });
+    }
 
-  try {
-      const messages = await clientchatCollection.find({ orderId }).toArray();
-      res.status(200).json(messages);
-  } catch (error) {
-      console.error('Error fetching client chat messages:', error);
-      res.status(500).json({ message: 'Error fetching messages' });
-  }
+    try {
+        const messages = await clientchatCollection.find({ orderId }).toArray();
+        res.status(200).json(messages);
+    } catch (error) {
+        console.error('Error fetching client chat messages:', error);
+        res.status(500).json({ message: 'Error fetching messages' });
+    }
 });
+
+
 
 app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
   const { projectTitle, projectBrief, packageName, sellPrice, buyerid,packageContents, buyername, email, coupon , time } = req.body;
@@ -569,14 +581,12 @@ app.get('/packdetails/:id', async (req, res) => {
     const id = req.params.id;
   
     try {
-      // Validate MongoDB ObjectId
       if (!ObjectId.isValid(id)) {
         return res.status(400).json({ success: false, message: "Invalid Employee ID" });
       }
   
-      // Query database using findOne()
       const employee = await employeeCollection.findOne({ _id: new ObjectId(id) });
-  
+      res.send(result);
       if (!employee) {
         return res.status(404).json({ success: false, message: "Employee not found" });
       }
