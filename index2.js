@@ -78,7 +78,10 @@ async function run() {
       const mapCollection = client.db('Cloudcompany').collection('mapdata');
       const employeeCollection = client.db('Cloudcompany').collection('employees');
       const clientCollection = client.db('Cloudcompany').collection('clients');
+      const hclientCollection = client.db('Cloudcompany').collection('hclients');
+      const socialCollection = client.db('Cloudcompany').collection('social');
       const tasksCollection = client.db('Cloudcompany').collection('tasks');
+      const advertiseCollection = client.db('Cloudcompany').collection('advertisement');
       const clientchatCollection = client.db('Cloudcompany').collection('clientchat');
       const employeechatCollection = client.db('Cloudcompany').collection('employeechat');
       const PsoldCollection = client.db('Cloudcompany').collection('soldpackage');
@@ -90,6 +93,39 @@ app.get('/', (req, res) => {
           res.send('Simple CRUD is running');
 });
 
+app.get('/home', async (req, res) => {
+  try {
+    const packageResult = await packageCollection.find().toArray();
+    const mapResult = await mapCollection.find().toArray();
+    const reviewResult = await reviewCollection.find().toArray();
+    const serviceResult = await serviceCollection.find().toArray();
+    const advertiseResult = await advertiseCollection.find().toArray();
+    const socialResult = await socialCollection.find().toArray();
+    const faqResult = await faqCollection.find().toArray();
+    const hclientResult = await hclientCollection.find().toArray();
+    const catResult = await categoryCollection.find().toArray();
+
+
+    // Combine all the results into one object to send back
+    const result = {
+      packages: packageResult,
+      maps: mapResult,
+      reviews: reviewResult,
+      services: serviceResult,
+      advertisements: advertiseResult,
+      faqs: faqResult,
+      social:socialResult,
+      clients: hclientResult,
+      category: catResult
+
+    };
+
+    res.send(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: 'Error fetching data' });
+  }
+});
 
 
 function broadcastMessage(identifier, message) {
