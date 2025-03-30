@@ -6,6 +6,7 @@ const app = express();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const moment = require('moment');
 const port = process.env.PORT || 5000;
 const bcrypt = require('bcrypt');const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
@@ -85,6 +86,8 @@ async function run() {
       const clientchatCollection = client.db('Cloudcompany').collection('clientchat');
       const employeechatCollection = client.db('Cloudcompany').collection('employeechat');
       const PsoldCollection = client.db('Cloudcompany').collection('soldpackage');
+      const visitorCollection = client.db('Cloudcompany').collection('visitors');
+
 
 
 
@@ -92,6 +95,20 @@ async function run() {
 app.get('/', (req, res) => {
           res.send('Simple CRUD is running');
 });
+app.post('/vcount', async (req, res) => {
+  try {
+      const today = moment().format('YYYY-MM-DD'); // Get today's date
+
+      const result = await visitorCollection.findOneAndUpdate(
+          { date: today }, // Find today's entry
+          { $inc: { count: req.body.increment || 1 } }, // Increment count
+          { upsert: true, returnDocument: 'after' } // Insert if not exists & return updated doc
+      );
+
+  } catch (error) {
+      console.error("Error updating visitor count:", error);
+      res.status(500).json({ error: "Internal server error" });
+  }});
 
 app.get('/home', async (req, res) => {
   try {
@@ -104,9 +121,11 @@ app.get('/home', async (req, res) => {
     const faqResult = await faqCollection.find().toArray();
     const hclientResult = await hclientCollection.find().toArray();
     const catResult = await categoryCollection.find().toArray();
+  //   const visResult = await visitorCollection.aggregate([
+  //     { $group: { _id: null, total: { $sum: "$count" } } }
+  // ]).toArray();
 
 
-    // Combine all the results into one object to send back
     const result = {
       packages: packageResult,
       maps: mapResult,
@@ -116,7 +135,8 @@ app.get('/home', async (req, res) => {
       faqs: faqResult,
       social:socialResult,
       clients: hclientResult,
-      category: catResult
+      category: catResult,
+      // viscount: visResult
 
     };
 
@@ -231,7 +251,6 @@ wss.on('connection', (ws, req) => {
     });
 });
 
-// API Endpoints
 app.post('/addempchat', async (req, res) => {
     const { taskId, empId, empName, text, time, sender } = req.body;
 
@@ -622,17 +641,19 @@ app.get('/packdetails/:id', async (req, res) => {
       }
   
       const employee = await employeeCollection.findOne({ _id: new ObjectId(id) });
-      res.send(result);
+  
+      // Remove the incorrect line 'res.send(result);'
       if (!employee) {
         return res.status(404).json({ success: false, message: "Employee not found" });
       }
   
-      res.status(200).json(employee);
+      res.status(200).json(employee); // Send the correct employee object in the response
     } catch (error) {
       console.error("Error fetching employee:", error);
       res.status(500).json({ success: false, message: "Internal Server Error" });
     }
   });
+  
   app.get('/employees', async(req, res) =>{
     const result = await employeeCollection.find().toArray();
     res.send(result);
@@ -650,7 +671,7 @@ app.get('/packdetails/:id', async (req, res) => {
     const result = await employeeCollection.deleteOne(query);
     res.send(result);
   });
-  //                                                                   Employees login operations 
+  //                                                                   Employees Client login operations 
   app.post('/employeelogin', async (req, res) => {
     const { remail, rpass } = req.body;
   
@@ -721,6 +742,66 @@ app.get('/packdetails/:id', async (req, res) => {
       });
     }
   });
+  app.post('/clientlogin', async (req, res) => {
+    const { remail, rpass } = req.body;
+  
+    if (!remail || !rpass) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email and password are required' 
+      });
+    }
+  
+    try {
+      const user = await clientCollection.findOne({ remail });
+      if (!user) {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'User not found' 
+        });
+      }
+      if (user.rpass !== rpass) {
+        return res.status(401).json({ 
+          success: false, 
+          message: 'Invalid password' 
+        });
+      }
+      const token = jwt.sign(
+        {
+         
+         userId: user._id, 
+         role: user.role,
+         email: user.remail,  
+         rname: user.rname,
+         rppic: user.rppic,
+         country: user.country,
+
+        },
+        process.env.JWT_SECRET, 
+        { expiresIn: '1h' } 
+      );
+      return res.status(200).json({
+        success: true,
+        message: 'Login successful',
+        token, 
+        user: {
+          id: user._id,
+          role: user.role,
+          remail: user.remail,
+          rname: user.rname,
+          rppic: user.rppic,
+          country: user.country,
+        },
+      });
+  
+    } catch (err) {
+      console.error('Login error: ', err);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Internal server error. Please try again later.' 
+      });
+    }
+  });
     //                                                                   Client login operations 
   app.post('/addclient', async (req, res) => {
     const newPost = req.body;
@@ -735,66 +816,7 @@ app.get('/packdetails/:id', async (req, res) => {
       const result = await clientCollection.deleteOne(query);
       res.send(result);
     });
-    app.post('/clientlogin', async (req, res) => {
-      const { remail, rpass } = req.body;
-    
-      if (!remail || !rpass) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Email and password are required' 
-        });
-      }
-    
-      try {
-        const user = await clientCollection.findOne({ remail });
-        if (!user) {
-          return res.status(404).json({ 
-            success: false, 
-            message: 'User not found' 
-          });
-        }
-        if (user.rpass !== rpass) {
-          return res.status(401).json({ 
-            success: false, 
-            message: 'Invalid password' 
-          });
-        }
-        const token = jwt.sign(
-          {
-           
-           userId: user._id, 
-           role: user.role,
-           email: user.remail,  
-           rname: user.rname,
-           rppic: user.rppic,
-           country: user.country,
 
-          },
-          process.env.JWT_SECRET, 
-          { expiresIn: '1h' } 
-        );
-        return res.status(200).json({
-          success: true,
-          message: 'Login successful',
-          token, 
-          user: {
-            id: user._id,
-            role: user.role,
-            remail: user.remail,
-            rname: user.rname,
-            rppic: user.rppic,
-            country: user.country,
-          },
-        });
-    
-      } catch (err) {
-        console.error('Login error: ', err);
-        return res.status(500).json({ 
-          success: false, 
-          message: 'Internal server error. Please try again later.' 
-        });
-      }
-    });
     app.get("/clientprofile/:id", async (req, res) => {
       const id = req.params.id;
     
@@ -840,13 +862,28 @@ res.send(result);
 app.get('/tasks', async (req, res) => {
 try {
   const result = await tasksCollection.find({ tstatus: { $ne: 'Done' } }).toArray();
-  console.log(result); // Log the filtered results for debugging
+  console.log(result); 
   res.send(result);
 } catch (error) {
   console.error("Error fetching tasks:", error);
   res.status(500).send("Error fetching tasks");
 }
 });
+app.get('/comtasks', async (req, res) => {
+  try {
+   
+    const result = await tasksCollection.find({ tstatus: 'Done' }).toArray();
+    
+    
+    console.log(result); 
+
+    res.json(result);
+  } catch (error) {
+    console.error("Error fetching tasks:", error);
+    res.status(500).send("Error fetching tasks");
+  }
+});
+
 app.post('/addtask', async (req, res) => {
 const newPost = req.body;
 console.log(newPost);
