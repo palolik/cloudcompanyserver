@@ -97,12 +97,12 @@ app.get('/', (req, res) => {
 });
 app.post('/vcount', async (req, res) => {
   try {
-      const today = moment().format('YYYY-MM-DD'); // Get today's date
+      const today = moment().format('YYYY-MM-DD'); 
 
       const result = await visitorCollection.findOneAndUpdate(
-          { date: today }, // Find today's entry
-          { $inc: { count: req.body.increment || 1 } }, // Increment count
-          { upsert: true, returnDocument: 'after' } // Insert if not exists & return updated doc
+          { date: today }, 
+          { $inc: { count: req.body.increment || 1 } }, 
+          { upsert: true, returnDocument: 'after' } 
       );
 
   } catch (error) {
@@ -340,7 +340,7 @@ app.get('/clichat/:orderId', async (req, res) => {
 
 
 app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
-  const { projectTitle, projectBrief, packageName, sellPrice, buyerid,packageContents, buyername, email, coupon , time } = req.body;
+  const { projectTitle, projectBrief, packageName, sellPrice, buyerid,packageContents, buyername, email, coupon , time,bdp,status,feedback,rating } = req.body;
   const parsedPackageContents = packageContents ? JSON.parse(packageContents) : [];
 
   const attachments = req.files ? req.files.map((file) => file.path) : [];
@@ -357,6 +357,10 @@ app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
     email,
     attachments, 
     time,
+    bdp,
+    status:"pending",
+    feedback:"",
+    rating:0,
     createdAt: new Date(),
   };
 
@@ -378,6 +382,29 @@ app.get('/orders', async (req, res) => {
 }));
 res.json(updatedProducts);
 }); 
+
+app.put('/updateordercontents/:orderId', async (req, res) => {
+  const { orderId } = req.params;
+  const { packageContents } = req.body;
+
+  try {
+    const result = await PsoldCollection.updateOne(
+      { _id: new ObjectId(orderId) },
+      { $set: { packageContents } }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res.status(404).json({ success: false, message: 'Order not found or not updated' });
+    }
+
+    res.json({ success: true, message: 'Package contents updated' });
+  } catch (error) {
+    console.error('Error updating package contents:', error);
+    res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+});
+
+
 app.get('/orders/:userid', async (req, res) => {
   const result = await PsoldCollection.find().toArray();
   const updatedProducts = result.map(product => ({
@@ -406,7 +433,6 @@ app.put('/updatePackageStatus/:orderId', async (req, res) => {
     const orderObjectId = new ObjectId(orderId);
     console.log("Converted orderId to ObjectId:", orderObjectId);
 
-    // Find the order by orderId
     const order = await PsoldCollection.findOne({ _id: orderObjectId });
     console.log("Found order:", order);
 
@@ -415,7 +441,6 @@ app.put('/updatePackageStatus/:orderId', async (req, res) => {
       return res.status(404).send({ message: 'Order not found' });
     }
 
-    // Update the packageContents with the new isDone status
     const updatedPackageContents = order.packageContents.map((content) => {
       console.log("Checking content:", content);
       const updatedContent = packageContents.find(updated => updated.id === content.id);
@@ -430,7 +455,6 @@ app.put('/updatePackageStatus/:orderId', async (req, res) => {
 
     console.log("Updated package contents:", updatedPackageContents);
 
-    // Update the order with the new package contents
     const result = await PsoldCollection.updateOne(
       { _id: orderObjectId },
       { $set: { packageContents: updatedPackageContents } }
@@ -452,6 +476,7 @@ app.put('/updatePackageStatus/:orderId', async (req, res) => {
 });
 app.get('/packages', async(req, res) =>{
       const result = await packageCollection.find().toArray();
+      console.log(result);
       res.send(result);
 });
   app.post('/addpackages', async (req, res) => {
@@ -459,6 +484,45 @@ app.get('/packages', async(req, res) =>{
     console.log(newPost);
     const result = await packageCollection.insertOne(newPost);
     res.send(result);
+});
+
+app.post('/packageclicks/:packid', async (req, res) => {
+  try {
+    const packid = req.params.packid;
+    const { incrementBy = 1 } = req.body; 
+
+    const result = await packageCollection.updateOne(
+      { _id: new ObjectId(packid) },
+      { $inc: { clicks: incrementBy } } 
+    );
+
+    res.send(result);
+  } catch (error) {
+    console.error('Error updating clicks:', error);
+    res.status(500).send({ message: 'Error updating clicks' });
+  }
+});
+
+
+app.post('/packagestatus/:packid', async (req, res) => {
+  try {
+    const packid = req.params.packid;
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).send({ message: 'Status is required' });
+    }
+
+    const result = await packageCollection.updateOne(
+      { _id: new ObjectId(packid) },
+      { $set: { status: status } } 
+    );
+
+    res.send(result);
+  } catch (error) {
+    console.error('Error updating status:', error);
+    res.status(500).send({ message: 'Error updating status' });
+  }
 });
   app.delete('/delpackage/:id', async (req, res) => {
       const id = req.params.id;
