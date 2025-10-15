@@ -86,6 +86,7 @@ async function run() {
       const clientchatCollection = client.db('Cloudcompany').collection('clientchat');
       const employeechatCollection = client.db('Cloudcompany').collection('employeechat');
       const PsoldCollection = client.db('Cloudcompany').collection('soldpackage');
+      const CfeedbackCollection = client.db('Cloudcompany').collection('cfeedback');
       const visitorCollection = client.db('Cloudcompany').collection('visitors');
 
 
@@ -337,15 +338,14 @@ app.get('/clichat/:orderId', async (req, res) => {
     }
 });
 
-
-
 app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
-  const { projectTitle, projectBrief, packageName, sellPrice, buyerid,packageContents, buyername, email, coupon , time,bdp,status,feedback,rating } = req.body;
+  const { packageId, projectTitle, projectBrief, packageName, sellPrice, buyerid,packageContents, buyername, email, coupon , time,bdp } = req.body;
   const parsedPackageContents = packageContents ? JSON.parse(packageContents) : [];
 
   const attachments = req.files ? req.files.map((file) => file.path) : [];
  
   const newProduct = {
+    packageId,
     projectTitle,
     projectBrief,
     packageName,
@@ -359,8 +359,6 @@ app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
     time,
     bdp,
     status:"pending",
-    feedback:"",
-    rating:0,
     createdAt: new Date(),
   };
 
@@ -403,8 +401,6 @@ app.put('/updateordercontents/:orderId', async (req, res) => {
     res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 });
-
-
 app.get('/orders/:userid', async (req, res) => {
   const result = await PsoldCollection.find().toArray();
   const updatedProducts = result.map(product => ({
@@ -415,6 +411,35 @@ app.get('/orders/:userid', async (req, res) => {
 }));
 res.json(updatedProducts);
 }); 
+app.post('/orderstatus/:orderid', async (req, res) => {
+  try {
+    const orderid = req.params.orderid;
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).send({ message: 'Status is required' });
+    }
+
+    const updateFields = { status };
+
+    if (status === 'started') {
+      updateFields.startedAt = new Date();
+    } else if (status === 'completed') {
+      updateFields.completedAt = new Date();
+    }
+
+    const result = await PsoldCollection.updateOne(
+      { _id: new ObjectId(orderid) },
+      { $set: updateFields }
+    );
+
+    res.send(result);
+  } catch (error) {
+    console.error('Error updating status:', error);
+    res.status(500).send({ message: 'Error updating status' });
+  }
+});
+
 app.put('/updatePackageStatus/:orderId', async (req, res) => {
   const { orderId } = req.params;
   const { packageContents } = req.body;
@@ -485,7 +510,6 @@ app.get('/packages', async(req, res) =>{
     const result = await packageCollection.insertOne(newPost);
     res.send(result);
 });
-
 app.post('/packageclicks/:packid', async (req, res) => {
   try {
     const packid = req.params.packid;
@@ -502,8 +526,6 @@ app.post('/packageclicks/:packid', async (req, res) => {
     res.status(500).send({ message: 'Error updating clicks' });
   }
 });
-
-
 app.post('/packagestatus/:packid', async (req, res) => {
   try {
     const packid = req.params.packid;
@@ -544,10 +566,14 @@ app.get('/packdetails/:id', async (req, res) => {
   const postId = req.params.id;
   console.log('ID', postId);
   const query = { _id: new ObjectId(postId) };
-  const result = await packageCollection.findOne(query);
-  console.log('ID', result);
+    const query2 = { packageId: postId };
 
-  res.send({ package: result  });
+  const result = await packageCollection.findOne(query);
+    const result2 = await CfeedbackCollection.find(query2).toArray();
+
+  console.log('ID', result,result2);
+
+  res.send({ package: result ,feedbacks:result2 });
 });
    //                                                                   Map CRUD operations 
    app.get('/map', async (req, res) => {
@@ -639,7 +665,6 @@ app.get('/packdetails/:id', async (req, res) => {
     const result = await serviceCollection.deleteOne(query);
     res.send(result);
   });
-  
   //                                                                     Team CRUD operations 
   app.get('/team', async(req, res) =>{
     const result = await teamCollection.find().toArray();
@@ -658,7 +683,6 @@ app.get('/packdetails/:id', async (req, res) => {
     const result = await teamCollection.deleteOne(query);
     res.send(result);
   });
-  
   //                                                                    Category CRUD operations 
   app.get('/category', async(req, res) =>{
     const result = await categoryCollection.find().toArray();
@@ -1058,6 +1082,46 @@ try {
     res.status(500).json({ message: 'Internal server error' });
 }
 });
+
+app.post('/clientfeedbacks', async (req, res) => {
+  const { tfeedback, rating, packageId, orderid, cname, cdp } = req.body;
+
+  try {
+    const newFeedback = {
+      packageId,
+      orderid,
+      tfeedback,
+      rating,
+      cname,
+      cdp,
+      createdAt: new Date(),
+    };
+
+    const result = await CfeedbackCollection.insertOne(newFeedback);
+
+    if (!result.insertedId) {
+      return res.status(400).json({ message: 'Failed to create feedback' });
+    }
+
+    // 2️⃣ Update order status in PsoldCollection
+    const result2 = await PsoldCollection.updateOne(
+      { _id: new ObjectId(orderid) },
+      { $set: { status: "completed" , feedbackgiven: true} }
+    );
+
+    // 3️⃣ Respond with success
+    res.json({
+      message: 'Feedback created successfully',
+      insertedId: result.insertedId,
+      modifiedCount: 1, // Keeps frontend logic working
+      orderUpdated: result2.modifiedCount > 0,
+    });
+  } catch (error) {
+    console.error('Error creating feedback:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 app.post('/addclasses', async (req, res) => {
 const newPost = req.body;
 console.log(newPost);

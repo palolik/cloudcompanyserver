@@ -1,0 +1,20 @@
+app.post('/orderstatus/:orderid', async (req, res) => {
+  try {
+    const orderid = req.params.orderid;
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).send({ message: 'Status is required' });
+    }
+
+    const result = await PsoldCollection.updateOne(
+      { _id: new ObjectId(orderid) },
+      { $set: { status: status } } 
+    );
+
+    res.send(result);
+  } catch (error) {
+    console.error('Error updating status:', error);
+    res.status(500).send({ message: 'Error updating status' });
+  }
+});
