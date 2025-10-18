@@ -87,12 +87,64 @@ async function run() {
       const employeechatCollection = client.db('Cloudcompany').collection('employeechat');
       const PsoldCollection = client.db('Cloudcompany').collection('soldpackage');
       const CfeedbackCollection = client.db('Cloudcompany').collection('cfeedback');
+      const EfeedbackCollection = client.db('Cloudcompany').collection('efeedback');
       const visitorCollection = client.db('Cloudcompany').collection('visitors');
 
 
 
 
+app.get('/admindashboard', async (req, res) => {
+  try {
+      const soldPackage = (await PsoldCollection.find().toArray()).length;
+    const taskTotal = (await tasksCollection.find().toArray()).length;
+    const employes = (await employeeCollection.find().toArray()).length;
+    const clients = (await clientCollection.find().toArray()).length;
 
+const items = await PsoldCollection.find().toArray();
+const earning = items.reduce((sum, item) => sum + Number(item.sellPrice || 0), 0);
+ 
+
+
+    const result = {
+      packages: soldPackage,
+      tasks: taskTotal,
+      employees: employes,
+      clients: clients,
+      earning: earning,
+
+
+    };
+    res.send(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: 'Error fetching data' });
+  }
+});
+app.get('/stats', async (req, res) => {
+  try {
+      const soldPackage = (await PsoldCollection.find().toArray()).length;
+    const reviews = (await CfeedbackCollection.find().toArray()).length;
+    const clients = (await clientCollection.find().toArray()).length;
+
+const visitors = await visitorCollection.find().toArray();
+const views = visitors.reduce((sum, item) => sum + Number(item.count || 0), 0);
+ 
+
+
+    const result = {
+      packages: soldPackage,
+      reviews: reviews,
+      clients: clients,
+      views: views,
+
+
+    };
+    res.send(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: 'Error fetching data' });
+  }
+});
 app.get('/', (req, res) => {
           res.send('Simple CRUD is running');
 });
@@ -110,6 +162,32 @@ app.post('/vcount', async (req, res) => {
       console.error("Error updating visitor count:", error);
       res.status(500).json({ error: "Internal server error" });
   }});
+app.get('/vcount', async (req, res) => {
+  try {
+    const month = req.query.month; // Optional: e.g. ?month=2025-10
+    let filter = {};
+
+    if (month) {
+      filter.date = { $regex: `^${month}` };
+    }
+
+    const visitors = await visitorCollection
+      .find(filter)
+      .sort({ date: 1 })
+      .toArray();
+
+    res.json({
+      success: true,
+      data: visitors.map(v => ({
+        day: Number(v.date.split('-')[2]), // extract day number
+        views: v.count || 0
+      })),
+    });
+  } catch (error) {
+    console.error('Error fetching visitor counts:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
 
 app.get('/home', async (req, res) => {
   try {
@@ -122,9 +200,7 @@ app.get('/home', async (req, res) => {
     const faqResult = await faqCollection.find().toArray();
     const hclientResult = await hclientCollection.find().toArray();
     const catResult = await categoryCollection.find().toArray();
-  //   const visResult = await visitorCollection.aggregate([
-  //     { $group: { _id: null, total: { $sum: "$count" } } }
-  // ]).toArray();
+ 
 
 
     const result = {
@@ -137,7 +213,6 @@ app.get('/home', async (req, res) => {
       social:socialResult,
       clients: hclientResult,
       category: catResult,
-      // viscount: visResult
 
     };
 
@@ -971,7 +1046,6 @@ app.get('/comtasks', async (req, res) => {
     res.status(500).send("Error fetching tasks");
   }
 });
-
 app.post('/addtask', async (req, res) => {
 const newPost = req.body;
 console.log(newPost);
@@ -1025,10 +1099,9 @@ app.put('/comptask/:id', async (req, res) => {
 app.put('/accepttask/:id', async (req, res) => {
 const id = req.params.id;
 const { taptr, apname,
-  apdp, tdt } = req.body; // Get acceptor ID & calculated due time
+  apdp, tdt } = req.body; 
 
-// Check if taptr and tdt are provided
-if (!taptr || !tdt || !apname || !apdp) {
+if (!taptr || !apname || !apdp) {
     return res.status(400).json({ message: 'Missing required fields (taptr or tdt)' });
 }
 
@@ -1039,7 +1112,7 @@ const update = {
       apname,
       apdp,      
       tstatus: 'Accepted', 
-      tdt             
+      tat: formatDateTime(new Date()),
     }
 };
 
@@ -1058,7 +1131,7 @@ try {
 });
 app.put('/taskfeedback/:id', async (req, res) => {
 const id = req.params.id;
-const { tfeedback } = req.body; // Get acceptor ID & calculated due time
+const { tfeedback } = req.body; 
 
 
 const filter = { _id: new ObjectId(id), tstatus: 'Completed' };
@@ -1081,6 +1154,67 @@ try {
     console.error('Error accepting task:', error);
     res.status(500).json({ message: 'Internal server error' });
 }
+});
+app.put('/moretime/:id', async (req, res) => {
+  const id = req.params.id;
+
+  try {
+    const filter = { _id: new ObjectId(id) };
+    const update = { $set: { tmoretime: true } };
+
+    const result = await tasksCollection.updateOne(filter, update);
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found or already updated',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Requested more time successfully',
+      modifiedCount: result.modifiedCount,
+    });
+  } catch (error) {
+    console.error('Error requesting more time:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+app.put('/addmoretime/:id', async (req, res) => {
+  const id = req.params.id;
+  const { extraTime } = req.body; 
+
+  try {
+    const filter = { _id: new ObjectId(id) };
+    const task = await tasksCollection.findOne(filter);
+
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found',
+      });
+    }
+
+    const currentTime = parseFloat(task.ttime) || 0;
+    const additionalTime = parseFloat(extraTime) || 0;
+
+    const newTime = currentTime + additionalTime;
+
+    const update = { $set: { ttime: newTime.toString(), tmoretime: "time added" } };
+
+    const result = await tasksCollection.updateOne(filter, update);
+
+    res.json({
+      success: true,
+      message: `Added ${additionalTime} to task time successfully`,
+      newTime: newTime.toString(),
+      modifiedCount: result.modifiedCount,
+    });
+  } catch (error) {
+    console.error('Error adding more time:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
 });
 
 app.post('/clientfeedbacks', async (req, res) => {
