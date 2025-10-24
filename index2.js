@@ -87,8 +87,9 @@ async function run() {
       const employeechatCollection = client.db('Cloudcompany').collection('employeechat');
       const PsoldCollection = client.db('Cloudcompany').collection('soldpackage');
       const CfeedbackCollection = client.db('Cloudcompany').collection('cfeedback');
-      const EfeedbackCollection = client.db('Cloudcompany').collection('efeedback');
+      const marketerCollection = client.db('Cloudcompany').collection('marketing');
       const visitorCollection = client.db('Cloudcompany').collection('visitors');
+      const rolesCollection = client.db('Cloudcompany').collection('roles');
 
 
 
@@ -413,38 +414,7 @@ app.get('/clichat/:orderId', async (req, res) => {
     }
 });
 
-app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
-  const { packageId, projectTitle, projectBrief, packageName, sellPrice, buyerid,packageContents, buyername, email, coupon , time,bdp } = req.body;
-  const parsedPackageContents = packageContents ? JSON.parse(packageContents) : [];
 
-  const attachments = req.files ? req.files.map((file) => file.path) : [];
- 
-  const newProduct = {
-    packageId,
-    projectTitle,
-    projectBrief,
-    packageName,
-    sellPrice,
-    buyerid,
-    packageContents: parsedPackageContents,  
-    coupon,
-    buyername,
-    email,
-    attachments, 
-    time,
-    bdp,
-    status:"pending",
-    createdAt: new Date(),
-  };
-
-  try {
-    const result = await PsoldCollection.insertOne(newProduct);
-    res.status(200).send({ message: 'Package purchased successfully', result });
-  } catch (error) {
-    console.error('Error inserting package:', error);
-    res.status(500).send({ message: 'Failed to purchase package' });
-  }
-});
 app.get('/orders', async (req, res) => {
   const result = await PsoldCollection.find().toArray();
   const updatedProducts = result.map(product => ({
@@ -514,7 +484,39 @@ app.post('/orderstatus/:orderid', async (req, res) => {
     res.status(500).send({ message: 'Error updating status' });
   }
 });
+   //                                                                  Package CRUD operations 
+app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
+  const { packageId, projectTitle, projectBrief, packageName, sellPrice, buyerid,packageContents, buyername, email, coupon , time,bdp } = req.body;
+  const parsedPackageContents = packageContents ? JSON.parse(packageContents) : [];
 
+  const attachments = req.files ? req.files.map((file) => file.path) : [];
+ 
+  const newProduct = {
+    packageId,
+    projectTitle,
+    projectBrief,
+    packageName,
+    sellPrice,
+    buyerid,
+    packageContents: parsedPackageContents,  
+    coupon,
+    buyername,
+    email,
+    attachments, 
+    time,
+    bdp,
+    status:"pending",
+    createdAt: new Date(),
+  };
+
+  try {
+    const result = await PsoldCollection.insertOne(newProduct);
+    res.status(200).send({ message: 'Package purchased successfully', result });
+  } catch (error) {
+    console.error('Error inserting package:', error);
+    res.status(500).send({ message: 'Failed to purchase package' });
+  }
+});
 app.put('/updatePackageStatus/:orderId', async (req, res) => {
   const { orderId } = req.params;
   const { packageContents } = req.body;
@@ -821,12 +823,57 @@ app.get('/packdetails/:id', async (req, res) => {
     const result = await employeeCollection.find().toArray();
     res.send(result);
   });
-  app.post('/addemployee', async (req, res) => {
-  const newPost = req.body;
-  console.log(newPost);
-  const result = await employeeCollection.insertOne(newPost);
-  res.send(result);
-  });
+app.post("/addemployee", async (req, res) => {
+  try {
+    const newPost = req.body;
+
+    // Default role
+    newPost.role = "emp";
+
+    // Check if sub-department is marketer
+    if (newPost.rsubdep === "Cloud Company Marketing") {
+      newPost.role = "marketer";
+    }
+
+    console.log("Adding Employee:", newPost);
+    const result = await employeeCollection.insertOne(newPost);
+
+    // If employee is marketer, generate referral & coupon codes automatically
+    if (newPost.role === "marketer") {
+      const userId = result.insertedId.toString(); // use _id as unique identifier
+      const rname = newPost.rname || "MARKETER";
+      const base = Buffer.from(rname).toString("base64").slice(-4);
+      const referralCode = `REF-${rname.substring(0, 3).toUpperCase()}-${base}`;
+      const couponCode = `SAVE10-${rname.substring(0, 3).toUpperCase()}-${base}`;
+
+      const newMarketer = {
+        userId,
+        rname,
+        referralCode,
+        couponCode,
+        referralCount: 0,
+        couponCount: 0,
+        createdAt: new Date(),
+      };
+
+      await marketerCollection.insertOne(newMarketer);
+      console.log("✅ Marketer data generated:", newMarketer);
+    }
+
+    res.status(201).send({
+      success: true,
+      message: "Employee added successfully",
+      insertedId: result.insertedId,
+    });
+  } catch (error) {
+    console.error("Error adding employee:", error);
+    res
+      .status(500)
+      .send({ success: false, message: "Failed to add employee" });
+  }
+});
+
+
   app.delete('/delemployee/:id', async (req, res) => {
     const id = req.params.id;
     const query = { _id: new ObjectId(id) };
@@ -838,7 +885,6 @@ app.get('/packdetails/:id', async (req, res) => {
   app.post('/employeelogin', async (req, res) => {
     const { remail, rpass } = req.body;
   
-    // Validate input
     if (!remail || !rpass) {
       return res.status(400).json({ 
         success: false, 
@@ -847,7 +893,6 @@ app.get('/packdetails/:id', async (req, res) => {
     }
   
     try {
-      // Find the user by email
       const user = await employeeCollection.findOne({ remail });
   
       if (!user) {
@@ -864,7 +909,6 @@ app.get('/packdetails/:id', async (req, res) => {
         });
       }
   
-      // Generate JWT token
       const token = jwt.sign(
         {
          userId: user._id, 
@@ -875,8 +919,8 @@ app.get('/packdetails/:id', async (req, res) => {
          rdep: user.rdep,
          rsubdep: user.rsubdep,
          esprts: user.esprts },
-        process.env.JWT_SECRET, // Store JWT_SECRET in .env
-        { expiresIn: '1h' } // Token expires in 1 hour
+        process.env.JWT_SECRET, 
+        { expiresIn: '1h' } 
       );
   
       // Return the response with the token
@@ -965,6 +1009,71 @@ app.get('/packdetails/:id', async (req, res) => {
       });
     }
   });
+
+
+app.post("/adminlogin", async (req, res) => {
+  const { remail, rpass } = req.body;
+
+  if (!remail || !rpass) {
+    return res.status(400).json({
+      success: false,
+      message: "Email and password are required",
+    });
+  }
+
+  try {
+    const user = await rolesCollection.findOne({ remail });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // password check
+    if (user.pass !== rpass) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid password",
+      });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      {
+        userId: user._id,
+        remail: user.remail,
+        rname: user.rname,
+        rphone: user.rphone,
+        tabs: user.tabs,
+      },
+      process.env.JWT_SECRET || "yourSecretKey",
+      { expiresIn: "3h" }
+    );
+
+    // Send success response
+    return res.status(200).json({
+      success: true,
+      message: "Login successful",
+      token,
+      user: {
+        id: user._id,
+        rname: user.rname,
+        remail: user.remail,
+        rphone: user.rphone,
+        tabs: user.tabs,
+      },
+    });
+  } catch (err) {
+    console.error("Login error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error. Please try again later.",
+    });
+  }
+});
+
     //                                                                   Client login operations 
   app.post('/addclient', async (req, res) => {
     const newPost = req.body;
@@ -1000,6 +1109,52 @@ app.get('/packdetails/:id', async (req, res) => {
         res.status(500).json({ success: false, message: "Internal Server Error" });
       }
     });
+
+
+
+app.get("/allclients", async (req, res) => {
+  try {
+    const clients = await clientCollection.find().toArray();
+    const orders = await PsoldCollection.find().toArray();
+
+    const clientsWithOrders = clients.map((client) => {
+      const clientId = client._id.toString(); // convert ObjectId → string
+
+      const clientOrders = orders.filter((order) => order.buyerid === clientId);
+
+      return {
+        ...client,
+        orders: clientOrders.map((order) => ({
+          packageId: order.packageId,
+          projectTitle: order.projectTitle,
+          sellPrice: order.sellPrice,
+        })),
+      };
+    });
+
+    res.json(clientsWithOrders);
+  } catch (error) {
+    console.error("Error fetching clients with orders:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+app.put("/updateclient/:id", async (req, res) => {
+  const id = req.params.id;
+  const updated = req.body;
+
+  try {
+    const result = await clientCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updated }
+    );
+    res.send(result);
+  } catch (error) {
+    console.error("Error updating client:", error);
+    res.status(500).send({ message: "Failed to update client" });
+  }
+});
+
   //                                                                   feedback CRUD operations 
   app.post('/feedback', async (req, res) => {
   const newPost = req.body;
@@ -1215,6 +1370,7 @@ app.put('/addmoretime/:id', async (req, res) => {
     console.error('Error adding more time:', error);
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
+
 });
 
 app.post('/clientfeedbacks', async (req, res) => {
@@ -1255,6 +1411,170 @@ app.post('/clientfeedbacks', async (req, res) => {
     res.status(500).json({ message: 'Internal server error' });
   }
 });
+app.get('/clientfeedbacks', async(req, res) =>{
+const result = await CfeedbackCollection.find().toArray();
+res.send(result);
+})
+
+app.post('/clientfeedbacks/status/:reviewId', async (req, res) => {
+  try {
+    const reviewId = req.params.reviewId;
+    const { status } = req.body;
+    if (!status) {
+      return res.status(400).send({ message: 'Status is required' });
+    }
+    const result = await CfeedbackCollection.updateOne(
+      { _id: new ObjectId(reviewId) },
+      { $set: { status } }
+    );
+    if (result.matchedCount === 0) {
+      return res.status(404).send({ message: 'Feedback not found' });
+    }
+    res.send({ success: true, modifiedCount: result.modifiedCount });
+  } catch (error) {
+    console.error('Error updating status:', error);
+    res.status(500).send({ message: 'Error updating status' });
+  }
+});
+// ===== Roles API =====
+app.get('/roles', async (req, res) => {
+  try {
+    const result = await rolesCollection.find().toArray();
+    res.send(result);
+  } catch (error) {
+    console.error("Error fetching roles:", error);
+    res.status(500).send({ message: "Error fetching roles" });
+  }
+});
+
+app.post('/roles', async (req, res) => {
+  try {
+    const newRole = req.body;
+    console.log("New Role:", newRole);
+    const result = await rolesCollection.insertOne(newRole);
+    res.send(result);
+  } catch (error) {
+    console.error("Error adding role:", error);
+    res.status(500).send({ message: "Error adding role" });
+  }
+});
+
+app.put('/roles/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const updatedRole = req.body;
+    const filter = { _id: new ObjectId(id) };
+    const updateDoc = { $set: updatedRole };
+
+    const result = await rolesCollection.updateOne(filter, updateDoc);
+    res.send(result);
+  } catch (error) {
+    console.error("Error updating role:", error);
+    res.status(500).send({ message: "Error updating role" });
+  }
+});
+
+app.delete('/roles/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    console.log("Deleting Role ID:", id);
+    const result = await rolesCollection.deleteOne(query);
+    res.send(result);
+  } catch (error) {
+    console.error("Error deleting role:", error);
+    res.status(500).send({ message: "Error deleting role" });
+  }
+});
+
+app.post("/marketer/:userId/generate-codes", async (req, res) => {
+  const { userId } = req.params;
+  try {
+    const marketer = await marketerCollection.findOne({ userId });
+    if (marketer) {
+      return res.status(200).json({ success: true, data: marketer });
+    }
+
+    const rname = req.body.rname || "MARKETER";
+    const base = Buffer.from(rname).toString("base64").slice(-4);
+    const referralCode = `REF-${rname.substring(0,3).toUpperCase()}-${base}`;
+    const couponCode = `SAVE10-${rname.substring(0,3).toUpperCase()}-${base}`;
+
+    const newMarketer = {
+      userId,
+      rname,
+      referralCode,
+      couponCode,
+      referralCount: 0,
+      couponCount: 0,
+      createdAt: new Date(),
+    };
+
+    await marketerCollection.insertOne(newMarketer);
+    res.status(201).json({ success: true, data: newMarketer });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Error generating codes" });
+  }
+});
+
+app.get("/marketer/:userId/codes", async (req, res) => {
+  try {
+    const marketer = await marketerCollection.findOne({ userId: req.params.userId });
+    if (!marketer) {
+      return res.status(404).json({ success: false, message: "Marketer not found" });
+    }
+    res.status(200).json({ success: true, data: marketer });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Error fetching marketer data" });
+  }
+});
+
+app.get("/ref/:code", async (req, res) => {
+  try {
+    const { code } = req.params;
+    const result = await marketerCollection.updateOne(
+      { referralCode: code },
+      { $inc: { referralCount: 1 } }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send("Referral code not found");
+    }
+
+    // Redirect to your landing page
+    res.redirect(`http://localhost:5173`);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error processing referral link");
+  }
+});
+
+app.put("/marketer/coupon/:code", async (req, res) => {
+  try {
+    const result = await marketerCollection.updateOne(
+      { couponCode: req.params.code },
+      { $inc: { couponCount: 1 } }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, message: "Coupon code not found" });
+    }
+    res.status(200).json({ success: true, message: "Coupon count incremented" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Error updating coupon count" });
+  }
+});
+app.get('/socialmedia', async(req, res) =>{
+const result = await socialCollection.find().toArray();
+res.send(result);
+})
+app.get('/faq', async(req, res) =>{
+const result = await faqCollection.find().toArray();
+res.send(result);
+})
 
 app.post('/addclasses', async (req, res) => {
 const newPost = req.body;
