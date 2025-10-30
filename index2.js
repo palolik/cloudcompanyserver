@@ -10,7 +10,7 @@ const moment = require('moment');
 const port = process.env.PORT || 5000;
 const bcrypt = require('bcrypt');const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
-const JWT_SECRET = process.env.JWT_SECRET || '237a3f9e2d1cc34bc6d731b9c1640d4a2dc821cd199ff6a37562643b5090e61f'; 
+const JWT_SECRET = '237a3f9e2d1cc34bc6d731b9c1640d4a2dc821cd199ff6a37562643b5090e61f'; 
 const WebSocket = require('ws');
 const server = require('http').createServer(app);
 const wss = new WebSocket.Server({ server });
@@ -38,7 +38,7 @@ const uploadDirectory = 'uploads';
 if (!fs.existsSync(uploadDirectory)) {
   fs.mkdirSync(uploadDirectory);
 }
-const uri = `mongodb+srv://${process.env.EMAILDB}:${process.env.PASSDB}@cluster0.fagav7n.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+const uri = `mongodb+srv://prottoy2441139:PCcEnjG5yyVwyxIw@cluster0.fagav7n.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
 
 const storage = multer.diskStorage({
@@ -90,7 +90,7 @@ async function run() {
       const marketerCollection = client.db('Cloudcompany').collection('marketing');
       const visitorCollection = client.db('Cloudcompany').collection('visitors');
       const rolesCollection = client.db('Cloudcompany').collection('roles');
-
+const expenseCollection = client.db('Cloudcompany').collection('expense');
 
 
 
@@ -201,7 +201,7 @@ app.get('/home', async (req, res) => {
     const faqResult = await faqCollection.find().toArray();
     const hclientResult = await hclientCollection.find().toArray();
     const catResult = await categoryCollection.find().toArray();
- 
+
 
 
     const result = {
@@ -688,6 +688,55 @@ app.get('/packdetails/:id', async (req, res) => {
     const result = await faqCollection.deleteOne(query);
     res.send(result);
   });
+   //                                                                   Expense CRUD operations 
+  app.get('/income', async (req, res) => {
+  try {
+    // Use projection to return only specific fields
+    const result = await PsoldCollection.find(
+      {}, // no filter — fetch all
+      {
+        projection: {
+          sellPrice: 1,
+          buyerid: 1,
+          packageName: 1,
+          createdAt: 1
+        }
+      }
+    ).toArray();
+
+    res.status(200).send(result);
+  } catch (error) {
+    console.error("Error fetching income data:", error);
+    res.status(500).send({ success: false, message: "Internal Server Error" });
+  }
+});
+
+  app.get('/expense', async(req, res) =>{
+    const result = await expenseCollection.find().toArray();
+    res.send(result);
+  });
+  app.post('/addexpense', async (req, res) => {
+  const newPost = req.body;
+  console.log(newPost);
+  const result = await expenseCollection.insertOne(newPost);
+  res.send(result);
+  });
+  app.delete('/delexpense/:id', async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    console.log('delete: ');
+    const result = await expenseCollection.deleteOne(query);
+    res.send(result);
+  });
+  app.put("/expense/:id", async (req, res) => {
+  const id = req.params.id;
+  const updatedExpense = req.body;
+  const filter = { _id: new ObjectId(id) };
+  const updateDoc = { $set: updatedExpense };
+  const result = await expenseCollection.updateOne(filter, updateDoc);
+  res.send({ success: result.modifiedCount > 0 });
+});
+
   //                                                                    Reviews CRUD operations 
   app.get('/review', async(req, res) =>{
     const result = await reviewCollection.find().toArray();
@@ -711,6 +760,37 @@ app.get('/packdetails/:id', async (req, res) => {
     const result = await couponCollection.find().toArray();
     res.send(result);
   });
+app.get("/couponshow", async (req, res) => {
+  try {
+    const coupons = await couponCollection.find().toArray();
+    const soldPackages = await PsoldCollection.find().toArray();
+
+    const couponUsageMap = soldPackages.reduce((acc, pkg) => {
+      const code = pkg.coupon?.toUpperCase();
+      if (code) acc[code] = (acc[code] || 0) + 1;
+      return acc;
+    }, {});
+
+    const couponsWithUsage = coupons.map((coupon) => {
+      const usedCount =
+        couponUsageMap[coupon.couponcode?.toUpperCase()] || 0;
+      const total = parseInt(coupon.coupontotal) || 0;
+      const remaining = Math.max(total - usedCount, 0);
+
+      return {
+        ...coupon,
+        usedCount,
+        remaining,
+      };
+    });
+
+    res.status(200).json(couponsWithUsage);
+  } catch (error) {
+    console.error("Error fetching coupons:", error);
+    res.status(500).json({ message: "Failed to fetch coupons." });
+  }
+});
+
   app.post('/addcoupon', async (req, res) => {
   const newPost = req.body;
   console.log(newPost);
@@ -796,6 +876,42 @@ app.get('/packdetails/:id', async (req, res) => {
     const result = await advertiseCollection.deleteOne(query);
     res.send(result);
   });
+  app.post('/adclicks/:adid', async (req, res) => {
+  try {
+    const adid = req.params.adid;
+    const { incrementBy = 1 } = req.body; 
+
+    const result = await advertiseCollection.updateOne(
+      { _id: new ObjectId(adid) },
+      { $inc: { clicks: incrementBy } } 
+    );
+
+    res.send(result);
+  } catch (error) {
+    console.error('Error updating clicks:', error);
+    res.status(500).send({ message: 'Error updating clicks' });
+  }
+});
+app.post('/adstatus/:adid', async (req, res) => {
+  try {
+    const adid = req.params.adid;
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).send({ message: 'Status is required' });
+    }
+
+    const result = await advertiseCollection.updateOne(
+      { _id: new ObjectId(adid) },
+      { $set: { status: status } } 
+    );
+
+    res.send(result);
+  } catch (error) {
+    console.error('Error updating status:', error);
+    res.status(500).send({ message: 'Error updating status' });
+  }
+});
   //                                                                   Employees CRUD operations 
   app.get("/employeeprofile/:id", async (req, res) => {
     const id = req.params.id;
@@ -872,8 +988,6 @@ app.post("/addemployee", async (req, res) => {
       .send({ success: false, message: "Failed to add employee" });
   }
 });
-
-
   app.delete('/delemployee/:id', async (req, res) => {
     const id = req.params.id;
     const query = { _id: new ObjectId(id) };
@@ -1109,9 +1223,6 @@ app.post("/adminlogin", async (req, res) => {
         res.status(500).json({ success: false, message: "Internal Server Error" });
       }
     });
-
-
-
 app.get("/allclients", async (req, res) => {
   try {
     const clients = await clientCollection.find().toArray();
@@ -1154,7 +1265,6 @@ app.put("/updateclient/:id", async (req, res) => {
     res.status(500).send({ message: "Failed to update client" });
   }
 });
-
   //                                                                   feedback CRUD operations 
   app.post('/feedback', async (req, res) => {
   const newPost = req.body;
@@ -1484,6 +1594,16 @@ app.delete('/roles/:id', async (req, res) => {
   } catch (error) {
     console.error("Error deleting role:", error);
     res.status(500).send({ message: "Error deleting role" });
+  }
+});
+
+app.get('/marketing', async (req, res) => {
+  try {
+    const result = await marketerCollection.find().toArray();
+    res.send(result);
+  } catch (error) {
+    console.error("Error fetching roles:", error);
+    res.status(500).send({ message: "Error fetching roles" });
   }
 });
 
