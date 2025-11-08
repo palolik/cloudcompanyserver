@@ -24,7 +24,11 @@ app.use(
           'http://localhost:5174',
           'https://crudapp-beb6a.web.app', 
           'http://10.0.2.2:5173',
-          'http://10.0.2.2:5174' 
+          'http://10.0.2.2:5174', 
+          'https://cloudcompany.cc/' ,
+          'https://cloudcompany.cc' 
+
+
  ],
         credentials: true
     })
@@ -33,7 +37,6 @@ app.use(express.json());
 app.use(bodyParser.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Create upload directory if it doesn't exist
 const uploadDirectory = 'uploads';
 if (!fs.existsSync(uploadDirectory)) {
   fs.mkdirSync(uploadDirectory);
@@ -54,7 +57,32 @@ const storage = multer.diskStorage({
     cb(null, Date.now() + path.extname(file.originalname));
   },
 });
-
+const cvStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const dirPath = path.join(__dirname, 'uploads', 'cv');
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+    }
+    cb(null, dirPath);
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + '-' + file.originalname.replace(/\s+/g, '_'));
+  },
+});
+const uploadCv = multer({ storage: cvStorage });
+const dpStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const dirPath = path.join(__dirname, 'uploads', 'dp');
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+    }
+    cb(null, dirPath);
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + '-' + file.originalname.replace(/\s+/g, '_'));
+  },
+});
+const uploaddp = multer({ storage: dpStorage });
 const upload = multer({ storage: storage });
 
 async function run() {
@@ -85,15 +113,89 @@ async function run() {
       const advertiseCollection = client.db('Cloudcompany').collection('advertisement');
       const clientchatCollection = client.db('Cloudcompany').collection('clientchat');
       const employeechatCollection = client.db('Cloudcompany').collection('employeechat');
+      const schatCollection = client.db('Cloudcompany').collection('schat');
+
       const PsoldCollection = client.db('Cloudcompany').collection('soldpackage');
       const CfeedbackCollection = client.db('Cloudcompany').collection('cfeedback');
       const marketerCollection = client.db('Cloudcompany').collection('marketing');
       const visitorCollection = client.db('Cloudcompany').collection('visitors');
       const rolesCollection = client.db('Cloudcompany').collection('roles');
-const expenseCollection = client.db('Cloudcompany').collection('expense');
+      const expenseCollection = client.db('Cloudcompany').collection('expense');
+      const careerCollection = client.db('Cloudcompany').collection('career');
+      const JobApplyCollection = client.db('Cloudcompany').collection('appliedcv');
 
 
+app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
+  const { packageId, projectTitle, projectBrief, packageName, sellPrice, buyerid,packageContents, buyername, email, coupon , time,bdp } = req.body;
+  const parsedPackageContents = packageContents ? JSON.parse(packageContents) : [];
 
+  const attachments = req.files ? req.files.map((file) => file.path) : [];
+ 
+  const newProduct = {
+    packageId,
+    projectTitle,
+    projectBrief,
+    packageName,
+    sellPrice,
+    buyerid,
+    packageContents: parsedPackageContents,  
+    coupon,
+    buyername,
+    email,
+    attachments, 
+    time,
+    bdp,
+    status:"pending",
+    createdAt: new Date(),
+  };
+
+  try {
+    const result = await PsoldCollection.insertOne(newProduct);
+    res.status(200).send({ message: 'Package purchased successfully', result });
+  } catch (error) {
+    console.error('Error inserting package:', error);
+    res.status(500).send({ message: 'Failed to purchase package' });
+  }
+});
+app.post("/applyjob", uploadCv.single("cv"), async (req, res) => {
+  try {
+    const { name, email, phone, jobTitle, jobid } = req.body;
+
+    if (!name || !email || !phone || !req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields (name, email, phone, CV) are required.",
+      });
+    }
+
+    const cvPath = req.file.path;
+
+    const application = {
+      name,
+      email,
+      phone,
+      jobTitle,
+      jobid: jobid , 
+      cv: cvPath,
+      createdAt: new Date(),
+    };
+
+    const result = await JobApplyCollection.insertOne(application);
+
+    res.status(200).json({
+      success: true,
+      message: "Application submitted successfully!",
+      insertedId: result.insertedId,
+    });
+  } catch (error) {
+    console.error("Error processing application:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to submit application.",
+      error: error.message,
+    });
+  }
+});
 app.get('/admindashboard', async (req, res) => {
   try {
       const soldPackage = (await PsoldCollection.find().toArray()).length;
@@ -189,7 +291,6 @@ app.get('/vcount', async (req, res) => {
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
-
 app.get('/home', async (req, res) => {
   try {
     const packageResult = await packageCollection.find().toArray();
@@ -224,7 +325,6 @@ app.get('/home', async (req, res) => {
   }
 });
 
-
 function broadcastMessage(identifier, message) {
     if (clients.has(identifier)) {
         clients.get(identifier).forEach(ws => {
@@ -234,10 +334,10 @@ function broadcastMessage(identifier, message) {
         });
     }
 }
-
 wss.on('connection', (ws, req) => {
     const empId = req.headers['empid'];
     const orderId = req.headers['orderid'];
+    const supportId = req.headers['supportid'];
 
     if (empId) {
         if (!clients.has(empId)) {
@@ -249,9 +349,13 @@ wss.on('connection', (ws, req) => {
             clients.set(orderId, []);
         }
         clients.get(orderId).push(ws);
+    } else if (supportId) {
+        if (!clients.has(supportId)) {
+            clients.set(supportId, []);
+        }
+        clients.get(supportId).push(ws);
     }
 
-    // Send chat history to new clients
     if (empId) {
         employeechatCollection.find({ empId }).toArray()
             .then(messages => ws.send(JSON.stringify(messages)))
@@ -260,7 +364,10 @@ wss.on('connection', (ws, req) => {
         clientchatCollection.find({ orderId }).toArray()
             .then(messages => ws.send(JSON.stringify(messages)))
             .catch(err => console.error('Error sending client messages:', err));
-    }
+    } else if (supportId) {
+        schatCollection.find({ supportId }).toArray()
+            .then(messages => ws.send(JSON.stringify(messages)))
+            .catch(err => console.error('Error sending client messages:', err));
 
     ws.on('message', async (message) => {
         try {
@@ -311,6 +418,28 @@ wss.on('connection', (ws, req) => {
                     await clientchatCollection.insertOne(newMessage);
                     broadcastMessage(msg.orderId, newMessage);
                 }
+            } else if (msg.supportId) {
+                newMessage = {
+                    supportId: msg.supportId,
+                    bId: msg.bId,
+                    bName: msg.bName,
+                    text: msg.text,
+                    sender: msg.sender,
+                    time: msg.time
+                };
+
+                const existingMessage = await schatCollection.findOne({
+                    supportId: msg.supportId,
+                    bId: msg.bId,
+                    text: msg.text,
+                    time: msg.time,
+                    sender: msg.sender
+                });
+
+                if (!existingMessage) {
+                    await schatCollection.insertOne(newMessage);
+                    broadcastMessage(msg.supportId, newMessage);
+                }
             }
         } catch (err) {
             console.error('Error processing WebSocket message:', err);
@@ -324,9 +453,12 @@ wss.on('connection', (ws, req) => {
         } else if (orderId && clients.has(orderId)) {
             clients.set(orderId, clients.get(orderId).filter(client => client !== ws));
             if (clients.get(orderId).length === 0) clients.delete(orderId);
+        }else if (supportId && clients.has(supportId)) {
+            clients.set(supportId, clients.get(supportId).filter(client => client !== ws));
+            if (clients.get(supportId).length === 0) clients.delete(supportId);
         }
     });
-});
+}});
 
 app.post('/addempchat', async (req, res) => {
     const { taskId, empId, empName, text, time, sender } = req.body;
@@ -354,7 +486,21 @@ app.post('/addempchat', async (req, res) => {
         res.status(500).json({ message: 'Error adding message' });
     }
 });
+app.get('/empchat/:taskId', async (req, res) => {
+    const { taskId } = req.params;
 
+    if (!taskId) {
+        return res.status(400).json({ message: 'Task ID is required' });
+    }
+
+    try {
+        const messages = await employeechatCollection.find({ taskId }).toArray();
+        res.status(200).json(messages);
+    } catch (error) {
+        console.error('Error fetching employee chat messages:', error);
+        res.status(500).json({ message: 'Error fetching messages' });
+    }
+});
 app.post('/addclichat', async (req, res) => {
     const { orderId, bId, bName, text, time, sender } = req.body;
 
@@ -381,23 +527,6 @@ app.post('/addclichat', async (req, res) => {
         res.status(500).json({ message: 'Error adding message' });
     }
 });
-
-app.get('/empchat/:taskId', async (req, res) => {
-    const { taskId } = req.params;
-
-    if (!taskId) {
-        return res.status(400).json({ message: 'Task ID is required' });
-    }
-
-    try {
-        const messages = await employeechatCollection.find({ taskId }).toArray();
-        res.status(200).json(messages);
-    } catch (error) {
-        console.error('Error fetching employee chat messages:', error);
-        res.status(500).json({ message: 'Error fetching messages' });
-    }
-});
-
 app.get('/clichat/:orderId', async (req, res) => {
     const { orderId } = req.params;
 
@@ -412,6 +541,115 @@ app.get('/clichat/:orderId', async (req, res) => {
         console.error('Error fetching client chat messages:', error);
         res.status(500).json({ message: 'Error fetching messages' });
     }
+});
+app.post('/addschat', async (req, res) => {
+  const { supportId, bId, bName, text, time, sender } = req.body;
+
+  if (!supportId || !bId || !bName || !text || !time || !sender) {
+    return res.status(400).json({ message: 'Missing required fields' });
+  }
+
+  try {
+    const existingMessage = await schatCollection.findOne({ supportId, bId, text, time, sender });
+    if (existingMessage) {
+      return res.status(400).json({ message: 'Duplicate message' });
+    }
+   const newMessage = {
+  supportId,
+  bId,
+  bName,
+  text,
+  time,
+  sender,
+  read: sender === "buyer" ? false : true, // client messages start as unread
+};
+
+
+    await schatCollection.insertOne(newMessage);
+    res.status(201).json(newMessage);
+
+    setTimeout(() => {
+      broadcastMessage(supportId, newMessage);
+    }, 0);
+  } catch (error) {
+    console.error('Error adding client message:', error);
+    res.status(500).json({ message: 'Error adding message' });
+  }
+});
+app.get('/schat/:supportId', async (req, res) => {
+    const { supportId } = req.params;
+
+    if (!supportId) {
+        return res.status(400).json({ message: 'Support ID is required' });
+    }
+
+    try {
+        const messages = await schatCollection.find({ supportId }).toArray();
+
+        // 🆕 Optional: Mark all client messages as read when admin views chat
+        await schatCollection.updateMany(
+            { supportId, sender: "client", read: false },
+            { $set: { read: true } }
+        );
+
+        res.status(200).json(messages);
+    } catch (error) {
+        console.error('Error fetching client chat messages:', error);
+        res.status(500).json({ message: 'Error fetching messages' });
+    }
+});
+// Mark as read endpoint
+app.post("/schat/mark-read/:supportId", async (req, res) => {
+  try {
+    await schatCollection.updateMany(
+      { supportId: req.params.supportId, sender: "user", read: false },
+      { $set: { read: true } }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: "Error marking as read", error: err });
+  }
+});
+
+app.get("/admin/support", async (req, res) => {
+  try {
+    const supports = await schatCollection
+      .aggregate([
+        {
+          $group: {
+            _id: "$supportId",
+            bName: { $first: "$bName" },
+            bId: { $first: "$bId" },
+            lastMessage: { $last: "$text" },
+            lastTime: { $last: "$time" },
+            unreadCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$sender", "user"] },
+                      { $eq: ["$read", false] }
+                    ]
+                  },
+                  1,
+                  0
+                ]
+              }
+            }
+          }
+        },
+        { $sort: { lastTime: -1 } }
+      ])
+      .toArray(); // 👈 VERY IMPORTANT
+
+    res.status(200).json(supports);
+  } catch (err) {
+    console.error("Error fetching support list:", err);
+    res.status(500).json({
+      message: "Error fetching support list",
+      error: err.message || err,
+    });
+  }
 });
 
 
@@ -485,38 +723,7 @@ app.post('/orderstatus/:orderid', async (req, res) => {
   }
 });
    //                                                                  Package CRUD operations 
-app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
-  const { packageId, projectTitle, projectBrief, packageName, sellPrice, buyerid,packageContents, buyername, email, coupon , time,bdp } = req.body;
-  const parsedPackageContents = packageContents ? JSON.parse(packageContents) : [];
 
-  const attachments = req.files ? req.files.map((file) => file.path) : [];
- 
-  const newProduct = {
-    packageId,
-    projectTitle,
-    projectBrief,
-    packageName,
-    sellPrice,
-    buyerid,
-    packageContents: parsedPackageContents,  
-    coupon,
-    buyername,
-    email,
-    attachments, 
-    time,
-    bdp,
-    status:"pending",
-    createdAt: new Date(),
-  };
-
-  try {
-    const result = await PsoldCollection.insertOne(newProduct);
-    res.status(200).send({ message: 'Package purchased successfully', result });
-  } catch (error) {
-    console.error('Error inserting package:', error);
-    res.status(500).send({ message: 'Failed to purchase package' });
-  }
-});
 app.put('/updatePackageStatus/:orderId', async (req, res) => {
   const { orderId } = req.params;
   const { packageContents } = req.body;
@@ -671,6 +878,24 @@ app.get('/packdetails/:id', async (req, res) => {
     res.send(result);
   });
   //                                                                      Faq CRUD operations 
+  app.get('/recruitment', async(req, res) =>{
+    const result = await careerCollection.find().toArray();
+    res.send(result);
+  });
+  app.post('/addrecruit', async (req, res) => {
+  const newPost = req.body;
+  console.log(newPost);
+  const result = await careerCollection.insertOne(newPost);
+  res.send(result);
+  });
+  app.delete('/delrecruit/:id', async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    console.log('delete: ');
+    const result = await careerCollection.deleteOne(query);
+    res.send(result);
+  });
+    //                                                                      career CRUD operations 
   app.get('/faq', async(req, res) =>{
     const result = await faqCollection.find().toArray();
     res.send(result);
@@ -943,20 +1168,15 @@ app.post("/addemployee", async (req, res) => {
   try {
     const newPost = req.body;
 
-    // Default role
     newPost.role = "emp";
-
-    // Check if sub-department is marketer
     if (newPost.rsubdep === "Cloud Company Marketing") {
       newPost.role = "marketer";
     }
 
     console.log("Adding Employee:", newPost);
     const result = await employeeCollection.insertOne(newPost);
-
-    // If employee is marketer, generate referral & coupon codes automatically
     if (newPost.role === "marketer") {
-      const userId = result.insertedId.toString(); // use _id as unique identifier
+      const userId = result.insertedId.toString(); 
       const rname = newPost.rname || "MARKETER";
       const base = Buffer.from(rname).toString("base64").slice(-4);
       const referralCode = `REF-${rname.substring(0, 3).toUpperCase()}-${base}`;
@@ -1033,7 +1253,7 @@ app.post("/addemployee", async (req, res) => {
          rdep: user.rdep,
          rsubdep: user.rsubdep,
          esprts: user.esprts },
-        process.env.JWT_SECRET, 
+         JWT_SECRET, 
         { expiresIn: '1h' } 
       );
   
@@ -1098,7 +1318,7 @@ app.post("/addemployee", async (req, res) => {
          country: user.country,
 
         },
-        process.env.JWT_SECRET, 
+        JWT_SECRET, 
         { expiresIn: '1h' } 
       );
       return res.status(200).json({
@@ -1123,9 +1343,7 @@ app.post("/addemployee", async (req, res) => {
       });
     }
   });
-
-
-app.post("/adminlogin", async (req, res) => {
+  app.post("/adminlogin", async (req, res) => {
   const { remail, rpass } = req.body;
 
   if (!remail || !rpass) {
@@ -1186,7 +1404,7 @@ app.post("/adminlogin", async (req, res) => {
       message: "Internal server error. Please try again later.",
     });
   }
-});
+  });
 
     //                                                                   Client login operations 
   app.post('/addclient', async (req, res) => {
@@ -1195,6 +1413,91 @@ app.post("/adminlogin", async (req, res) => {
     const result = await clientCollection.insertOne(newPost);
     res.send(result);
     });
+  app.put('/addclientdp/:id', uploaddp.single("dp"), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid client ID format" });
+    }
+
+    const { rname, remail, rphone, country } = req.body;
+    const updateFields = {};
+
+    if (rname) updateFields.rname = rname;
+    if (remail) updateFields.remail = remail;
+    if (rphone) updateFields.rphone = rphone;
+    if (country) updateFields.country = country;
+
+    if (req.file) {
+      const dpUrl = `${req.protocol}://${req.get("host")}/uploads/dp/${req.file.filename}`;
+      updateFields.rppic = dpUrl;
+    }
+
+    const filter = { _id: new ObjectId(id) };
+    const update = { $set: updateFields };
+
+    const result = await clientCollection.updateOne(filter, update);
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, message: "Client not found" });
+    }
+
+    res.json({
+      success: true,
+      message: "Profile updated successfully",
+      dpPath: updateFields.rppic || null,
+    });
+  } catch (error) {
+    console.error("Error updating client profile:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
+app.put('/addemployeedp/:id', uploaddp.single("dp"), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid employee ID format" });
+    }
+
+    const { rname, remail, rphone, country, esprts, rdep, rsubdep } = req.body;
+    const updateFields = {};
+
+    if (rname) updateFields.rname = rname;
+    if (remail) updateFields.remail = remail;
+    if (rphone) updateFields.rphone = rphone;
+    if (country) updateFields.country = country;
+    if (esprts) updateFields.esprts = esprts;
+    if (rdep) updateFields.rdep = rdep;
+    if (rsubdep) updateFields.rsubdep = rsubdep;
+
+    if (req.file) {
+      const dpUrl = `${req.protocol}://${req.get("host")}/uploads/dp/${req.file.filename}`;
+      updateFields.rppic = dpUrl;
+    }
+
+    const filter = { _id: new ObjectId(id) };
+    const update = { $set: updateFields };
+
+    const result = await employeeCollection.updateOne(filter, update);
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, message: "Employee not found" });
+    }
+
+    res.json({
+      success: true,
+      message: "Employee profile updated successfully",
+      updatedFields: updateFields,
+    });
+  } catch (error) {
+    console.error("Error updating employee profile:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
     app.delete('/delclient/:id', async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
