@@ -26,7 +26,10 @@ app.use(
           'http://10.0.2.2:5173',
           'http://10.0.2.2:5174', 
           'https://cloudcompany.cc/' ,
-          'https://cloudcompany.cc' 
+          'https://cloudcompany.cc' ,
+          'https://www.cloudcompany.cc/' ,
+          'https://www.cloudcompany.cc' ,
+
 
 
  ],
@@ -114,7 +117,6 @@ async function run() {
       const clientchatCollection = client.db('Cloudcompany').collection('clientchat');
       const employeechatCollection = client.db('Cloudcompany').collection('employeechat');
       const schatCollection = client.db('Cloudcompany').collection('schat');
-
       const PsoldCollection = client.db('Cloudcompany').collection('soldpackage');
       const CfeedbackCollection = client.db('Cloudcompany').collection('cfeedback');
       const marketerCollection = client.db('Cloudcompany').collection('marketing');
@@ -123,7 +125,7 @@ async function run() {
       const expenseCollection = client.db('Cloudcompany').collection('expense');
       const careerCollection = client.db('Cloudcompany').collection('career');
       const JobApplyCollection = client.db('Cloudcompany').collection('appliedcv');
-
+      const taskFlowCollection  = client.db('Cloudcompany').collection('taskflows');
 
 app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
   const { packageId, projectTitle, projectBrief, packageName, sellPrice, buyerid,packageContents, buyername, email, coupon , time,bdp } = req.body;
@@ -146,6 +148,7 @@ app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
     time,
     bdp,
     status:"pending",
+    pstatus: "notpaid",
     createdAt: new Date(),
   };
 
@@ -722,6 +725,88 @@ app.post('/orderstatus/:orderid', async (req, res) => {
     res.status(500).send({ message: 'Error updating status' });
   }
 });
+app.post('/orderpaymentstatus/:orderid', async (req, res) => {
+  try {
+    const orderid = req.params.orderid;
+    const { pstatus } = req.body;
+
+    if (!pstatus) {
+      return res.status(400).send({ message: 'Status is required' });
+    }
+
+    // 1️⃣ Update payment status
+    const result = await PsoldCollection.updateOne(
+      { _id: new ObjectId(orderid) },
+      { $set: { pstatus } }
+    );
+
+    if (pstatus !== "paid") {
+      return res.send({ message: "Status updated (not paid)", result });
+    }
+
+
+    const order = await PsoldCollection.findOne({ _id: new ObjectId(orderid) });
+
+    if (!order) return res.status(404).send({ message: "Order not found" });
+
+    const { packageId, buyerid } = order;
+
+    const template = await taskFlowCollection.findOne({ packageId });
+
+    if (!template)
+      return res.status(404).send({ message: "No task flow for this package" });
+
+    let previousTaskId = null;
+    let autoTasks = [];
+
+    for (let i = 0; i < template.flow.length; i++) {
+      const t = template.flow[i];
+
+      const newId = new ObjectId(); 
+      autoTasks.push({
+        _id: newId,
+        order: t.order,
+        tname: t.tname,
+        tdesc: t.tdesc,
+        rdep: t.rdep,
+        rsubdep: t.rsubdep,
+        esprts: t.esprts,
+        ttime: t.ttime,
+        tcc: t.tcc,
+
+        tfid: previousTaskId ? previousTaskId.toString() : null,
+
+        tstatus: i === 0 ? "pending" : "not activated",
+
+        taptr: "NA",
+        tmt: new Date().toISOString(),
+        tdt: "NA",
+
+        orderId: orderid,
+        packageId,
+        buyerId: buyerid,
+      });
+
+      // Set this ID for next loop
+      previousTaskId = newId;
+    }
+
+    // 6️⃣ Insert all tasks at once
+    await tasksCollection.insertMany(autoTasks);
+
+    return res.send({
+      message: "Payment completed & tasks generated successfully",
+      createdTasks: autoTasks.length,
+    });
+
+  } catch (error) {
+    console.error("ERROR:", error);
+    return res.status(500).send({ message: "Server error" });
+  }
+});
+
+
+
    //                                                                  Package CRUD operations 
 
 app.put('/updatePackageStatus/:orderId', async (req, res) => {
@@ -859,7 +944,7 @@ app.get('/packdetails/:id', async (req, res) => {
 
   res.send({ package: result ,feedbacks:result2 });
 });
-   //                                                                   Map CRUD operations 
+   //                                                                     Map CRUD operations 
    app.get('/map', async (req, res) => {
     const result = await mapCollection.find().toArray();
     res.send(result);
@@ -895,7 +980,7 @@ app.get('/packdetails/:id', async (req, res) => {
     const result = await careerCollection.deleteOne(query);
     res.send(result);
   });
-    //                                                                      career CRUD operations 
+    //                                                                   career CRUD operations 
   app.get('/faq', async(req, res) =>{
     const result = await faqCollection.find().toArray();
     res.send(result);
@@ -1638,32 +1723,66 @@ return `${year}-${month}-${day}T${hours}:${minutes}:00`;
 };
 app.put('/comptask/:id', async (req, res) => {
   const id = req.params.id;
-  // Ensure ID is a valid MongoDB ObjectId
-  if (!ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "Invalid task ID format" });
-  }
 
-  const filter = { _id: new ObjectId(id), tstatus: 'Accepted' };
-  const update = {
-      $set: {  
-          tstatus: 'Completed',  // Ensure correct field name
-          completedAt: formatDateTime(new Date()), // Optional: Add completion timestamp
-      }
-  };
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).json({ message: "Invalid task ID format" });
+  }
 
   try {
-      const result = await tasksCollection.updateOne(filter, update);
-
-      if (result.matchedCount === 0) {
-          return res.status(404).json({ message: 'No pending task found with the provided ID' });
+    // 1️⃣ Complete current task
+    const filter = { _id: new ObjectId(id), tstatus: 'Accepted' };
+    const update = {
+      $set: {
+        tstatus: 'Completed',
+        completedAt: formatDateTime(new Date()),
       }
+    };
 
-      res.json({ message: "Task marked as completed", result });
+    const result = await tasksCollection.updateOne(filter, update);
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({
+        message: 'No task with status "Accepted" found for this ID'
+      });
+    }
+
+    // 2️⃣ Find the task that depends on this one
+    const nextTask = await tasksCollection.findOne({
+      tfid: id,                     // this task depends on the completed task
+      tstatus: "not activated"      // only activate if currently locked
+    });
+
+    // No next task (this is the last task)
+    if (!nextTask) {
+      return res.json({
+        message: "Task completed. No dependent task found.",
+        result
+      });
+    }
+
+    // 3️⃣ Activate next task by setting it to PENDING
+    await tasksCollection.updateOne(
+      { _id: nextTask._id },
+      {
+        $set: {
+          tstatus: "pending",
+          activatedAt: formatDateTime(new Date())
+        }
+      }
+    );
+
+    return res.json({
+      message: "Task completed and next dependent task activated",
+      completedTaskId: id,
+      nextActivatedTaskId: nextTask._id
+    });
+
   } catch (error) {
-      console.error('Error updating task:', error);
-      res.status(500).json({ message: 'Internal server error' });
+    console.error('Error updating task:', error);
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
+
 app.put('/accepttask/:id', async (req, res) => {
 const id = req.params.id;
 const { taptr, apname,
@@ -1849,7 +1968,7 @@ app.post('/clientfeedbacks/status/:reviewId', async (req, res) => {
     res.status(500).send({ message: 'Error updating status' });
   }
 });
-// ===== Roles API =====
+//                                                                   ===== Roles API =====
 app.get('/roles', async (req, res) => {
   try {
     const result = await rolesCollection.find().toArray();
@@ -1897,6 +2016,82 @@ app.delete('/roles/:id', async (req, res) => {
   } catch (error) {
     console.error("Error deleting role:", error);
     res.status(500).send({ message: "Error deleting role" });
+  }
+});
+//                                                                   ===== Task flows  =====
+
+// CREATE NEW TEMPLATE
+app.post('/taskflows', async (req, res) => {
+  try {
+    const newTemplate = req.body;
+    console.log("New Task Flow:", newTemplate);
+
+    const result = await taskFlowCollection.insertOne(newTemplate);
+    res.send(result);
+  } catch (error) {
+    console.error("Error adding task flow:", error);
+    res.status(500).send({ message: "Error adding task flow" });
+  }
+});
+
+// GET ALL TEMPLATES
+app.get('/taskflows', async (req, res) => {
+  try {
+    const result = await taskFlowCollection.find().sort({ _id: -1 }).toArray();
+    res.send(result);
+  } catch (error) {
+    console.error("Error fetching task flows:", error);
+    res.status(500).send({ message: "Error fetching task flows" });
+  }
+});
+
+app.get('/taskflows/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const result = await taskFlowCollection.findOne({ _id: new ObjectId(id) });
+
+    if (!result) {
+      return res.status(404).send({ message: "Template not found" });
+    }
+
+    res.send(result);
+
+  } catch (error) {
+    console.error("Error fetching task flow:", error);
+    res.status(500).send({ message: "Error fetching task flow" });
+  }
+});
+
+// UPDATE TEMPLATE
+app.put('/taskflows/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const updatedTemplate = req.body;
+
+    const filter = { _id: new ObjectId(id) };
+    const updateDoc = { $set: updatedTemplate };
+
+    const result = await taskFlowCollection.updateOne(filter, updateDoc);
+
+    res.send(result);
+
+  } catch (error) {
+    console.error("Error updating task flow:", error);
+    res.status(500).send({ message: "Error updating task flow" });
+  }
+});
+
+// DELETE TEMPLATE
+app.delete('/taskflows/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const result = await taskFlowCollection.deleteOne({ _id: new ObjectId(id) });
+
+    res.send(result);
+
+  } catch (error) {
+    console.error("Error deleting task flow:", error);
+    res.status(500).send({ message: "Error deleting task flow" });
   }
 });
 
