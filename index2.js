@@ -126,6 +126,8 @@ async function run() {
       const careerCollection = client.db('Cloudcompany').collection('career');
       const JobApplyCollection = client.db('Cloudcompany').collection('appliedcv');
       const taskFlowCollection  = client.db('Cloudcompany').collection('taskflows');
+      const plannerCollection  = client.db('Cloudcompany').collection('planner');
+      const answersCollection  = client.db('Cloudcompany').collection('panswer');
 
 app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
   const { packageId, projectTitle, projectBrief, packageName, sellPrice, buyerid,packageContents, buyername, email, coupon , time,bdp } = req.body;
@@ -601,7 +603,6 @@ app.get('/schat/:supportId', async (req, res) => {
         res.status(500).json({ message: 'Error fetching messages' });
     }
 });
-// Mark as read endpoint
 app.post("/schat/mark-read/:supportId", async (req, res) => {
   try {
     await schatCollection.updateMany(
@@ -804,11 +805,7 @@ app.post('/orderpaymentstatus/:orderid', async (req, res) => {
     return res.status(500).send({ message: "Server error" });
   }
 });
-
-
-
    //                                                                  Package CRUD operations 
-
 app.put('/updatePackageStatus/:orderId', async (req, res) => {
   const { orderId } = req.params;
   const { packageContents } = req.body;
@@ -962,7 +959,7 @@ app.get('/packdetails/:id', async (req, res) => {
     const result = await mapCollection.deleteOne(query);
     res.send(result);
   });
-  //                                                                      Faq CRUD operations 
+  //                                                                      Career CRUD operations 
   app.get('/recruitment', async(req, res) =>{
     const result = await careerCollection.find().toArray();
     res.send(result);
@@ -980,7 +977,7 @@ app.get('/packdetails/:id', async (req, res) => {
     const result = await careerCollection.deleteOne(query);
     res.send(result);
   });
-    //                                                                   career CRUD operations 
+    //                                                                   FAQ CRUD operations 
   app.get('/faq', async(req, res) =>{
     const result = await faqCollection.find().toArray();
     res.send(result);
@@ -996,6 +993,24 @@ app.get('/packdetails/:id', async (req, res) => {
     const query = { _id: new ObjectId(id) };
     console.log('delete: ');
     const result = await faqCollection.deleteOne(query);
+    res.send(result);
+  });
+      //                                                                   Home Client CRUD operations 
+  app.get('/hclient', async(req, res) =>{
+    const result = await hclientCollection.find().toArray();
+    res.send(result);
+  });
+  app.post('/addhclient', async (req, res) => {
+  const newPost = req.body;
+  console.log(newPost);
+  const result = await hclientCollection.insertOne(newPost);
+  res.send(result);
+  });
+  app.delete('/delhclient/:id', async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    console.log('delete: ');
+    const result = await hclientCollection.deleteOne(query);
     res.send(result);
   });
    //                                                                   Expense CRUD operations 
@@ -2020,7 +2035,6 @@ app.delete('/roles/:id', async (req, res) => {
 });
 //                                                                   ===== Task flows  =====
 
-// CREATE NEW TEMPLATE
 app.post('/taskflows', async (req, res) => {
   try {
     const newTemplate = req.body;
@@ -2034,7 +2048,6 @@ app.post('/taskflows', async (req, res) => {
   }
 });
 
-// GET ALL TEMPLATES
 app.get('/taskflows', async (req, res) => {
   try {
     const result = await taskFlowCollection.find().sort({ _id: -1 }).toArray();
@@ -2062,7 +2075,6 @@ app.get('/taskflows/:id', async (req, res) => {
   }
 });
 
-// UPDATE TEMPLATE
 app.put('/taskflows/:id', async (req, res) => {
   try {
     const id = req.params.id;
@@ -2081,7 +2093,6 @@ app.put('/taskflows/:id', async (req, res) => {
   }
 });
 
-// DELETE TEMPLATE
 app.delete('/taskflows/:id', async (req, res) => {
   try {
     const id = req.params.id;
@@ -2193,13 +2204,165 @@ app.get('/faq', async(req, res) =>{
 const result = await faqCollection.find().toArray();
 res.send(result);
 })
+app.post('/addplanner', async (req, res) => {
+  try {
+    const { title, questions } = req.body;
 
-app.post('/addclasses', async (req, res) => {
-const newPost = req.body;
-console.log(newPost);
-const result = await menuCollection.insertOne(newPost);
-res.send(result);
+    // Validate title
+    if (!title || typeof title !== "string") {
+      return res.status(400).json({ message: "Planner title is required" });
+    }
+
+    // Validate questions array
+    if (!Array.isArray(questions)) {
+      return res.status(400).json({ message: "Questions must be an array" });
+    }
+
+    const result = await plannerCollection.insertOne({
+      title,
+      questions,
+      createdAt: new Date()
+    });
+
+    res.json(result);
+
+  } catch (err) {
+    console.error("❌ Error inserting planner:", err);
+    res.status(500).json({ message: "Server error" });
+  }
 });
+
+//                                                                           Get ALL planners
+app.get('/getque', async (req, res) => {
+  try {
+    const result = await plannerCollection.find().toArray();
+    res.send(result);
+  } catch (err) {
+    console.error("Error fetching planners:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+app.get('/getans', async (req, res) => {
+  try {
+    const result = await answersCollection.find().toArray();
+    res.send(result);
+  } catch (err) {
+    console.error("Error fetching planners:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+app.get('/getquetitle/:title', async (req, res) => {
+  try {
+    const { title } = req.params;
+
+    const result = await plannerCollection.findOne({ title });
+
+    if (!result) {
+      return res.status(404).json({ message: "No planner found with this title" });
+    }
+
+    res.send(result);
+  } catch (err) {
+    console.error("Error fetching planner by title:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+app.get('/getque/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid ID format" });
+    }
+
+    const result = await plannerCollection.findOne({ _id: new ObjectId(id) });
+
+    if (!result) {
+      return res.status(404).json({ message: "No planner found with this ID" });
+    }
+
+    res.send(result);
+  } catch (err) {
+    console.error("Error fetching planner by ID:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.delete('/planner/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+
+    const result = await plannerCollection.deleteOne({
+      _id: new ObjectId(id),
+    });
+
+    res.send(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+app.put("/planner/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { title, questions } = req.body;
+
+    const result = await plannerCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { title, questions } }
+    );
+
+    res.send(result);
+  } catch (err) {
+    console.error("Update error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+app.post("/submitanswers", async (req, res) => {
+  try {
+    const { formId, answers } = req.body;
+
+    if (!formId || !answers) {
+      return res.status(400).json({ message: "Missing formId or answers" });
+    }
+
+    if (!ObjectId.isValid(formId)) {
+      return res.status(400).json({ message: "Invalid form ID" });
+    }
+
+    // Fetch the original form questions
+    const form = await plannerCollection.findOne({
+      _id: new ObjectId(formId),
+    });
+
+    if (!form) {
+      return res.status(404).json({ message: "Form not found" });
+    }
+
+    // Merge user answers into questions
+    const questionsWithAnswers = form.questions.map((q) => ({
+      id: q.id,
+      label: q.title,       // map backend title to label
+      type: q.type,
+      options: q.options?.map((o) => o.value) || [],
+      answer: answers[q.id] || "", // attach user answer
+      condition: q.condition || null,
+    }));
+
+    // Save to answers collection
+    const saved = await answersCollection.insertOne({
+      formId,
+      questions: questionsWithAnswers,
+      submittedAt: new Date(),
+    });
+
+    res.send({ success: true, data: saved });
+  } catch (err) {
+    console.error("Error saving answers:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
         const server = app.listen(port, () => {
           console.log(`webServer is running on port: ${port}`);
       });
