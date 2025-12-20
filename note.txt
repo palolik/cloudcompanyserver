@@ -1,20 +1,13 @@
-app.post('/orderstatus/:orderid', async (req, res) => {
-  try {
-    const orderid = req.params.orderid;
-    const { status } = req.body;
+things to do , 
 
-    if (!status) {
-      return res.status(400).send({ message: 'Status is required' });
-    }
-
-    const result = await PsoldCollection.updateOne(
-      { _id: new ObjectId(orderid) },
-      { $set: { status: status } } 
-    );
-
-    res.send(result);
-  } catch (error) {
-    console.error('Error updating status:', error);
-    res.status(500).send({ message: 'Error updating status' });
-  }
-});
+1 . loader problem             -done
+2 . base url problem           -done
+3 . portfolio uploader 
+4 . portfolio shower , 
+5 . passward show unshow       -done
+6 . payment page ,
+7 . time up happening ,
+8 . edit profile problem ,     
+9 . the planner UI , 
+10. custom package , 
+11. font change                -done

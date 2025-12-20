@@ -73,6 +73,20 @@ const cvStorage = multer.diskStorage({
   },
 });
 const uploadCv = multer({ storage: cvStorage });
+const portfolioStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const dirPath = path.join(__dirname, 'uploads', 'portfolio');
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+    }
+    cb(null, dirPath);
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + '-' + file.originalname.replace(/\s+/g, '_'));
+  },
+});
+const uploadPortfolioImage = multer({ storage: portfolioStorage });
+
 const dpStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     const dirPath = path.join(__dirname, 'uploads', 'dp');
@@ -128,7 +142,11 @@ async function run() {
       const taskFlowCollection  = client.db('Cloudcompany').collection('taskflows');
       const plannerCollection  = client.db('Cloudcompany').collection('planner');
       const answersCollection  = client.db('Cloudcompany').collection('panswer');
+      const portfolioCollection  = client.db('Cloudcompany').collection('portfolio');
 
+app.get('/', (req, res) => {
+          res.send('Cloud company is running');
+});
 app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
   const { packageId, projectTitle, projectBrief, packageName, sellPrice, buyerid,packageContents, buyername, email, coupon , time,bdp } = req.body;
   const parsedPackageContents = packageContents ? JSON.parse(packageContents) : [];
@@ -201,6 +219,88 @@ app.post("/applyjob", uploadCv.single("cv"), async (req, res) => {
     });
   }
 });
+
+app.post("/portfolio", uploadPortfolioImage.single("image"), async (req, res) => {
+    try {
+      const {
+        title,
+        link,
+        shortDetails,
+        metaData,
+        portfolioType,
+        userId,
+      } = req.body;
+
+      // Validation
+      if (!title || !shortDetails || !portfolioType || !req.file) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Title, short details, portfolio type, and image are required.",
+        });
+      }
+
+      const portfolioItem = {
+        title,
+        link: link || null,
+        shortDetails,
+        metaData: metaData || null,
+        portfolioType,
+        image: req.file.path,
+        userId: userId || null,
+        createdAt: new Date(),
+      };
+
+      const result = await portfolioCollection.insertOne(portfolioItem);
+
+      res.status(201).json({
+        success: true,
+        message: "Portfolio uploaded successfully!",
+        data: {
+          id: result.insertedId,
+          ...portfolioItem,
+        },
+      });
+    } catch (error) {
+      console.error("Portfolio upload error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to upload portfolio.",
+        error: error.message,
+      });
+    }
+  }
+);
+app.get('/getportfolio', async(req, res) =>{
+    const result = await portfolioCollection.find().toArray();
+    res.send(result);
+  });
+app.get("/getmyportfolio", async (req, res) => {
+  try {
+    const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "userId is required",
+      });
+    }
+
+    const result = await portfolioCollection
+      .find({ userId })
+      .sort({ createdAt: -1 }) 
+      .toArray();
+
+    res.json(result);
+  } catch (error) {
+    console.error("Get portfolio error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch portfolio",
+    });
+  }
+});
+
 app.get('/admindashboard', async (req, res) => {
   try {
       const soldPackage = (await PsoldCollection.find().toArray()).length;
@@ -253,9 +353,7 @@ const views = visitors.reduce((sum, item) => sum + Number(item.count || 0), 0);
     res.status(500).send({ message: 'Error fetching data' });
   }
 });
-app.get('/', (req, res) => {
-          res.send('Simple CRUD is running');
-});
+
 app.post('/vcount', async (req, res) => {
   try {
       const today = moment().format('YYYY-MM-DD'); 
@@ -296,37 +394,46 @@ app.get('/vcount', async (req, res) => {
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
-app.get('/home', async (req, res) => {
+// Critical data for first paint
+app.get('/home/critical', async (req, res) => {
   try {
-    const packageResult = await packageCollection.find().toArray();
-    const mapResult = await mapCollection.find().toArray();
-    const reviewResult = await reviewCollection.find().toArray();
-    const serviceResult = await serviceCollection.find().toArray();
-    const advertiseResult = await advertiseCollection.find().toArray();
-    const socialResult = await socialCollection.find().toArray();
-    const faqResult = await faqCollection.find().toArray();
-    const hclientResult = await hclientCollection.find().toArray();
-    const catResult = await categoryCollection.find().toArray();
+    const [  maps,category,social] = await Promise.all([
+         mapCollection.find().toArray(),
+         categoryCollection.find().toArray(),
+         socialCollection.find().toArray(),
+    ]);
 
-
-
-    const result = {
-      packages: packageResult,
-      maps: mapResult,
-      reviews: reviewResult,
-      services: serviceResult,
-      advertisements: advertiseResult,
-      faqs: faqResult,
-      social:socialResult,
-      clients: hclientResult,
-      category: catResult,
-
-    };
-
-    res.send(result);
+    res.send({ maps,category,social });
   } catch (error) {
-    console.error(error);
-    res.status(500).send({ message: 'Error fetching data' });
+    res.status(500).send({ message: 'Error' });
+  }
+});
+
+app.get('/home/secondary', async (req, res) => {
+  try {
+    const [
+     advertisements,
+      packages,
+      services,
+      clients,
+      faqs,
+    ] = await Promise.all([
+      advertiseCollection.find().toArray(),
+      packageCollection.find().toArray(),
+      serviceCollection.find().toArray(),
+      hclientCollection.find().toArray(),
+      faqCollection.find().toArray()
+    ]);
+
+    res.send({
+      advertisements,
+      packages,
+      services,
+      clients,
+      faqs,
+         });
+  } catch (error) {
+    res.status(500).send({ message: 'Error' });
   }
 });
 
@@ -655,7 +762,6 @@ app.get("/admin/support", async (req, res) => {
     });
   }
 });
-
 
 app.get('/orders', async (req, res) => {
   const result = await PsoldCollection.find().toArray();
@@ -1248,12 +1354,11 @@ app.post('/adstatus/:adid', async (req, res) => {
   
       const employee = await employeeCollection.findOne({ _id: new ObjectId(id) });
   
-      // Remove the incorrect line 'res.send(result);'
       if (!employee) {
         return res.status(404).json({ success: false, message: "Employee not found" });
       }
   
-      res.status(200).json(employee); // Send the correct employee object in the response
+      res.status(200).json(employee);
     } catch (error) {
       console.error("Error fetching employee:", error);
       res.status(500).json({ success: false, message: "Internal Server Error" });
@@ -1308,211 +1413,210 @@ app.post("/addemployee", async (req, res) => {
       .send({ success: false, message: "Failed to add employee" });
   }
 });
-  app.delete('/delemployee/:id', async (req, res) => {
-    const id = req.params.id;
-    const query = { _id: new ObjectId(id) };
-    console.log('delete:');
-    const result = await employeeCollection.deleteOne(query);
-    res.send(result);
-  });
-  //                                                                   Employees Client login operations 
-  app.post('/employeelogin', async (req, res) => {
-    const { remail, rpass } = req.body;
-  
-    if (!remail || !rpass) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Email and password are required' 
-      });
-    }
-  
-    try {
-      const user = await employeeCollection.findOne({ remail });
-  
-      if (!user) {
-        return res.status(404).json({ 
-          success: false, 
-          message: 'User not found' 
-        });
-      }
-  
-      if (user.rpass !== rpass) {
-        return res.status(401).json({ 
-          success: false, 
-          message: 'Invalid password' 
-        });
-      }
-  
-      const token = jwt.sign(
-        {
-         userId: user._id, 
-         role: user.role,
-         email: user.remail,  
-         rname: user.rname,
-         rppic: user.rppic,   
-         rdep: user.rdep,
-         rsubdep: user.rsubdep,
-         esprts: user.esprts },
-         JWT_SECRET, 
-        { expiresIn: '1h' } 
-      );
-  
-      // Return the response with the token
-      return res.status(200).json({
-        success: true,
-        message: 'Login successful',
-        token, // Provide the token to the client
-        user: {
-          id: user._id,
-          role: user.role,
-          remail: user.remail,
-          rname: user.rname,
-          rppic: user.rppic,
-          rdep: user.rdep,
-          rsubdep: user.rsubdep,
-          esprts: user.esprts
-  
-        },
-      });
-  
-    } catch (err) {
-      console.error('Login error: ', err);
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Internal server error. Please try again later.' 
-      });
-    }
-  });
-  app.post('/clientlogin', async (req, res) => {
-    const { remail, rpass } = req.body;
-  
-    if (!remail || !rpass) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Email and password are required' 
-      });
-    }
-  
-    try {
-      const user = await clientCollection.findOne({ remail });
-      if (!user) {
-        return res.status(404).json({ 
-          success: false, 
-          message: 'User not found' 
-        });
-      }
-      if (user.rpass !== rpass) {
-        return res.status(401).json({ 
-          success: false, 
-          message: 'Invalid password' 
-        });
-      }
-      const token = jwt.sign(
-        {
-         
-         userId: user._id, 
-         role: user.role,
-         email: user.remail,  
-         rname: user.rname,
-         rppic: user.rppic,
-         country: user.country,
-
-        },
-        JWT_SECRET, 
-        { expiresIn: '1h' } 
-      );
-      return res.status(200).json({
-        success: true,
-        message: 'Login successful',
-        token, 
-        user: {
-          id: user._id,
-          role: user.role,
-          remail: user.remail,
-          rname: user.rname,
-          rppic: user.rppic,
-          country: user.country,
-        },
-      });
-  
-    } catch (err) {
-      console.error('Login error: ', err);
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Internal server error. Please try again later.' 
-      });
-    }
-  });
-  app.post("/adminlogin", async (req, res) => {
+app.delete('/delemployee/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete:');
+  const result = await employeeCollection.deleteOne(query);
+  res.send(result);
+});
+//                                                                   Employees Client login operations 
+app.post('/employeelogin', async (req, res) => {
   const { remail, rpass } = req.body;
 
   if (!remail || !rpass) {
-    return res.status(400).json({
-      success: false,
-      message: "Email and password are required",
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Email and password are required' 
     });
   }
 
   try {
-    const user = await rolesCollection.findOne({ remail });
+    const user = await employeeCollection.findOne({ remail });
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
       });
     }
 
-    // password check
-    if (user.pass !== rpass) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid password",
+    if (user.rpass !== rpass) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'wrong password' 
       });
     }
 
-    // Generate JWT token
     const token = jwt.sign(
       {
-        userId: user._id,
-        remail: user.remail,
+        userId: user._id, 
+        role: user.role,
+        email: user.remail,  
         rname: user.rname,
-        rphone: user.rphone,
-        tabs: user.tabs,
-      },
-      process.env.JWT_SECRET || "yourSecretKey",
-      { expiresIn: "3h" }
+        rppic: user.rppic,   
+        rdep: user.rdep,
+        rsubdep: user.rsubdep,
+        esprts: user.esprts },
+        JWT_SECRET, 
+      { expiresIn: '1h' } 
     );
 
-    // Send success response
+    // Return the response with the token
     return res.status(200).json({
       success: true,
-      message: "Login successful",
-      token,
+      message: 'Login successful',
+      token, // Provide the token to the client
       user: {
         id: user._id,
-        rname: user.rname,
+        role: user.role,
         remail: user.remail,
-        rphone: user.rphone,
-        tabs: user.tabs,
+        rname: user.rname,
+        rppic: user.rppic,
+        rdep: user.rdep,
+        rsubdep: user.rsubdep,
+        esprts: user.esprts
+
       },
     });
+
   } catch (err) {
-    console.error("Login error:", err);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error. Please try again later.",
+    console.error('Login error: ', err);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error. Please try again later.' 
     });
   }
-  });
+});
+app.post('/clientlogin', async (req, res) => {
+  const { remail, rpass } = req.body;
 
-    //                                                                   Client login operations 
-  app.post('/addclient', async (req, res) => {
-    const newPost = req.body;
-    console.log(newPost);
-    const result = await clientCollection.insertOne(newPost);
-    res.send(result);
+  if (!remail || !rpass) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Email and password are required' 
     });
+  }
+
+  try {
+    const user = await clientCollection.findOne({ remail });
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
+    }
+    if (user.rpass !== rpass) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Invalid password' 
+      });
+    }
+    const token = jwt.sign(
+      {
+        
+        userId: user._id, 
+        role: user.role,
+        email: user.remail,  
+        rname: user.rname,
+        rppic: user.rppic,
+        country: user.country,
+
+      },
+      JWT_SECRET, 
+      { expiresIn: '1h' } 
+    );
+    return res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      token, 
+      user: {
+        id: user._id,
+        role: user.role,
+        remail: user.remail,
+        rname: user.rname,
+        rppic: user.rppic,
+        country: user.country,
+      },
+    });
+
+  } catch (err) {
+    console.error('Login error: ', err);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error. Please try again later.' 
+    });
+  }
+});
+app.post("/adminlogin", async (req, res) => {
+const { remail, rpass } = req.body;
+
+if (!remail || !rpass) {
+  return res.status(400).json({
+    success: false,
+    message: "Email and password are required",
+  });
+}
+
+try {
+  const user = await rolesCollection.findOne({ remail });
+
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: "User not found",
+    });
+  }
+
+  // password check
+  if (user.pass !== rpass) {
+    return res.status(401).json({
+      success: false,
+      message: "Invalid password",
+    });
+  }
+
+  // Generate JWT token
+  const token = jwt.sign(
+    {
+      userId: user._id,
+      remail: user.remail,
+      rname: user.rname,
+      rphone: user.rphone,
+      tabs: user.tabs,
+    },
+    process.env.JWT_SECRET || "yourSecretKey",
+    { expiresIn: "3h" }
+  );
+
+  // Send success response
+  return res.status(200).json({
+    success: true,
+    message: "Login successful",
+    token,
+    user: {
+      id: user._id,
+      rname: user.rname,
+      remail: user.remail,
+      rphone: user.rphone,
+      tabs: user.tabs,
+    },
+  });
+} catch (err) {
+  console.error("Login error:", err);
+  return res.status(500).json({
+    success: false,
+    message: "Internal server error. Please try again later.",
+  });
+}
+});
+  //                                                                   Client login operations 
+app.post('/addclient', async (req, res) => {
+  const newPost = req.body;
+  console.log(newPost);
+  const result = await clientCollection.insertOne(newPost);
+  res.send(result);
+  });
   app.put('/addclientdp/:id', uploaddp.single("dp"), async (req, res) => {
   try {
     const { id } = req.params;
@@ -1553,7 +1657,6 @@ app.post("/addemployee", async (req, res) => {
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
-
 app.put('/addemployeedp/:id', uploaddp.single("dp"), async (req, res) => {
   try {
     const { id } = req.params;
@@ -1597,35 +1700,33 @@ app.put('/addemployeedp/:id', uploaddp.single("dp"), async (req, res) => {
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
+app.delete('/delclient/:id', async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  console.log('delete:');
+  const result = await clientCollection.deleteOne(query);
+  res.send(result);
+});
+app.get("/clientprofile/:id", async (req, res) => {
+  const id = req.params.id;
 
-    app.delete('/delclient/:id', async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      console.log('delete:');
-      const result = await clientCollection.deleteOne(query);
-      res.send(result);
-    });
+  try {
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid Employee ID" });
+    }
 
-    app.get("/clientprofile/:id", async (req, res) => {
-      const id = req.params.id;
-    
-      try {
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).json({ success: false, message: "Invalid Employee ID" });
-        }
-    
-        const employee = await clientCollection.findOne({ _id: new ObjectId(id) });
-    
-        if (!employee) {
-          return res.status(404).json({ success: false, message: "Employee not found" });
-        }
-    
-        res.status(200).json(employee);
-      } catch (error) {
-        console.error("Error fetching employee:", error);
-        res.status(500).json({ success: false, message: "Internal Server Error" });
-      }
-    });
+    const employee = await clientCollection.findOne({ _id: new ObjectId(id) });
+
+    if (!employee) {
+      return res.status(404).json({ success: false, message: "Employee not found" });
+    }
+
+    res.status(200).json(employee);
+  } catch (error) {
+    console.error("Error fetching employee:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
 app.get("/allclients", async (req, res) => {
   try {
     const clients = await clientCollection.find().toArray();
@@ -1652,7 +1753,6 @@ app.get("/allclients", async (req, res) => {
     res.status(500).json({ message: "Internal Server Error" });
   }
 });
-
 app.put("/updateclient/:id", async (req, res) => {
   const id = req.params.id;
   const updated = req.body;
@@ -1797,7 +1897,6 @@ app.put('/comptask/:id', async (req, res) => {
     res.status(500).json({ message: 'Internal server error' });
   }
 });
-
 app.put('/accepttask/:id', async (req, res) => {
 const id = req.params.id;
 const { taptr, apname,
@@ -1919,7 +2018,6 @@ app.put('/addmoretime/:id', async (req, res) => {
   }
 
 });
-
 app.post('/clientfeedbacks', async (req, res) => {
   const { tfeedback, rating, packageId, orderid, cname, cdp } = req.body;
 
@@ -1962,7 +2060,6 @@ app.get('/clientfeedbacks', async(req, res) =>{
 const result = await CfeedbackCollection.find().toArray();
 res.send(result);
 })
-
 app.post('/clientfeedbacks/status/:reviewId', async (req, res) => {
   try {
     const reviewId = req.params.reviewId;
@@ -1993,7 +2090,6 @@ app.get('/roles', async (req, res) => {
     res.status(500).send({ message: "Error fetching roles" });
   }
 });
-
 app.post('/roles', async (req, res) => {
   try {
     const newRole = req.body;
@@ -2005,7 +2101,6 @@ app.post('/roles', async (req, res) => {
     res.status(500).send({ message: "Error adding role" });
   }
 });
-
 app.put('/roles/:id', async (req, res) => {
   try {
     const id = req.params.id;
@@ -2020,7 +2115,6 @@ app.put('/roles/:id', async (req, res) => {
     res.status(500).send({ message: "Error updating role" });
   }
 });
-
 app.delete('/roles/:id', async (req, res) => {
   try {
     const id = req.params.id;
@@ -2034,7 +2128,6 @@ app.delete('/roles/:id', async (req, res) => {
   }
 });
 //                                                                   ===== Task flows  =====
-
 app.post('/taskflows', async (req, res) => {
   try {
     const newTemplate = req.body;
@@ -2047,7 +2140,6 @@ app.post('/taskflows', async (req, res) => {
     res.status(500).send({ message: "Error adding task flow" });
   }
 });
-
 app.get('/taskflows', async (req, res) => {
   try {
     const result = await taskFlowCollection.find().sort({ _id: -1 }).toArray();
@@ -2057,7 +2149,6 @@ app.get('/taskflows', async (req, res) => {
     res.status(500).send({ message: "Error fetching task flows" });
   }
 });
-
 app.get('/taskflows/:id', async (req, res) => {
   try {
     const id = req.params.id;
@@ -2074,7 +2165,6 @@ app.get('/taskflows/:id', async (req, res) => {
     res.status(500).send({ message: "Error fetching task flow" });
   }
 });
-
 app.put('/taskflows/:id', async (req, res) => {
   try {
     const id = req.params.id;
@@ -2092,7 +2182,6 @@ app.put('/taskflows/:id', async (req, res) => {
     res.status(500).send({ message: "Error updating task flow" });
   }
 });
-
 app.delete('/taskflows/:id', async (req, res) => {
   try {
     const id = req.params.id;
@@ -2105,7 +2194,6 @@ app.delete('/taskflows/:id', async (req, res) => {
     res.status(500).send({ message: "Error deleting task flow" });
   }
 });
-
 app.get('/marketing', async (req, res) => {
   try {
     const result = await marketerCollection.find().toArray();
@@ -2115,7 +2203,6 @@ app.get('/marketing', async (req, res) => {
     res.status(500).send({ message: "Error fetching roles" });
   }
 });
-
 app.post("/marketer/:userId/generate-codes", async (req, res) => {
   const { userId } = req.params;
   try {
@@ -2146,7 +2233,6 @@ app.post("/marketer/:userId/generate-codes", async (req, res) => {
     res.status(500).json({ success: false, message: "Error generating codes" });
   }
 });
-
 app.get("/marketer/:userId/codes", async (req, res) => {
   try {
     const marketer = await marketerCollection.findOne({ userId: req.params.userId });
@@ -2159,7 +2245,6 @@ app.get("/marketer/:userId/codes", async (req, res) => {
     res.status(500).json({ success: false, message: "Error fetching marketer data" });
   }
 });
-
 app.get("/ref/:code", async (req, res) => {
   try {
     const { code } = req.params;
@@ -2179,7 +2264,6 @@ app.get("/ref/:code", async (req, res) => {
     res.status(500).send("Error processing referral link");
   }
 });
-
 app.put("/marketer/coupon/:code", async (req, res) => {
   try {
     const result = await marketerCollection.updateOne(
@@ -2231,7 +2315,6 @@ app.post('/addplanner', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
 //                                                                           Get ALL planners
 app.get('/getque', async (req, res) => {
   try {
@@ -2287,7 +2370,6 @@ app.get('/getque/:id', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
 app.delete('/planner/:id', async (req, res) => {
   try {
     const id = req.params.id;
