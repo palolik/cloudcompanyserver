@@ -2,11 +2,11 @@ things to do ,
 
 1 . loader problem             -done
 2 . base url problem           -done
-3 . portfolio uploader 
-4 . portfolio shower , 
+3 . portfolio uploader         -done
+4 . portfolio shower ,          -done
 5 . passward show unshow       -done
 6 . payment page ,
-7 . time up happening ,
+7 . time up happening ,         
 8 . edit profile problem ,     
 9 . the planner UI , 
 10. custom package , 

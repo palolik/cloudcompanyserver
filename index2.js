@@ -247,6 +247,7 @@ app.post("/portfolio", uploadPortfolioImage.single("image"), async (req, res) =>
         metaData: metaData || null,
         portfolioType,
         image: req.file.path,
+        status: "hidden",
         userId: userId || null,
         createdAt: new Date(),
       };
@@ -273,7 +274,18 @@ app.post("/portfolio", uploadPortfolioImage.single("image"), async (req, res) =>
 );
 app.get('/getportfolio', async(req, res) =>{
     const result = await portfolioCollection.find().toArray();
-    res.send(result);
+
+     const formatted = result.map(item => ({
+      ...item,
+      image: item.image
+        ? item.image.replace(
+            /^.*uploads/,
+            `${req.protocol}://${req.get("host")}/uploads`
+          )
+        : null
+    }));
+
+    res.json(formatted);
   });
 app.get("/getmyportfolio", async (req, res) => {
   try {
@@ -288,15 +300,138 @@ app.get("/getmyportfolio", async (req, res) => {
 
     const result = await portfolioCollection
       .find({ userId })
-      .sort({ createdAt: -1 }) 
+      .sort({ createdAt: -1 })
       .toArray();
 
-    res.json(result);
+    const formatted = result.map(item => ({
+      ...item,
+      image: item.image
+        ? item.image.replace(
+            /^.*uploads/,
+            `${req.protocol}://${req.get("host")}/uploads`
+          )
+        : null
+    }));
+
+    res.json(formatted);
   } catch (error) {
     console.error("Get portfolio error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch portfolio",
+    });
+  }
+});
+app.patch("/portfolio/:id/status", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, note } = req.body;
+
+    // Validate MongoDB ObjectId
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid portfolio ID format.",
+      });
+    }
+
+    if (!status) {
+      return res.status(400).json({
+        success: false,
+        message: "Status is required.",
+      });
+    }
+
+    const validStatuses = ["hidden", "visible", "archived"];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+      });
+    }
+
+    const updateData = {
+      status,
+      updatedAt: new Date()
+    };
+
+    // FIXED: Handle note properly - check for undefined/null/empty
+    if (note !== undefined && note !== null && String(note).trim() !== "") {
+      updateData.statusNote = String(note).trim();
+    } else {
+      // If no note provided, explicitly unset the field
+      updateData.statusNote = "";
+    }
+
+    const result = await portfolioCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updateData }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Portfolio item not found.",
+      });
+    }
+
+    // Fetch the updated document to return accurate data
+    const updatedPortfolio = await portfolioCollection.findOne(
+      { _id: new ObjectId(id) }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Portfolio status updated successfully!",
+      data: {
+        status: updatedPortfolio.status,
+        statusNote: updatedPortfolio.statusNote,
+        updatedAt: updatedPortfolio.updatedAt
+      }
+    });
+  } catch (error) {
+    console.error("Status update error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update portfolio status.",
+      error: error.message,
+    });
+  }
+});
+
+  app.delete('/delportfolio/:id', async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      console.log('delete: ');
+      const result = await portfolioCollection.deleteOne(query);
+      res.send(result);
+  });
+app.get("/portfolio/type/:portfolioType", async (req, res) => {
+  try {
+    const { portfolioType } = req.params;
+
+    const { status } = req.query;
+
+    const filter = { portfolioType };
+    
+    // If status is provided in query, add it to filter
+    if (status) {
+      filter.status = status;
+    }
+
+    const result = await portfolioCollection.find(filter).toArray();
+
+    res.status(200).json({
+      success: true,
+      count: result.length,
+      data: result,
+    });
+  } catch (error) {
+    console.error("Fetch portfolio by type error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch portfolios.",
+      error: error.message,
     });
   }
 });
