@@ -15,6 +15,7 @@ const WebSocket = require('ws');
 const server = require('http').createServer(app);
 const wss = new WebSocket.Server({ server });
 const clients = new Map();
+const SITE_URL = 'https://cloudcompany.cc';
 
 app.use(express.json());
 app.use(
@@ -103,6 +104,8 @@ const uploaddp = multer({ storage: dpStorage });
 const upload = multer({ storage: storage });
 
 async function run() {
+
+  
   try {
 
       const client = new MongoClient(uri, {
@@ -144,6 +147,97 @@ async function run() {
       const answersCollection  = client.db('Cloudcompany').collection('panswer');
       const portfolioCollection  = client.db('Cloudcompany').collection('portfolio');
 
+
+
+
+  // ─────────────────────────────────────────────────────────────────────────────
+// SEO ROUTES — paste this block into your server.js inside the run() function,
+// alongside your other app.get() routes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain');
+  res.send(`User-agent: *
+Allow: /
+
+# Block admin, employee, and private routes
+Disallow: /admin
+Disallow: /admin/
+Disallow: /client
+Disallow: /requireddetails
+Disallow: /employeesignup
+Disallow: /employeeprofile/
+Disallow: /clientprofile/
+Disallow: /marketerprofile/
+
+Sitemap: ${SITE_URL}/sitemap.xml`);
+});
+
+app.get('/sitemap.xml', async (req, res) => {
+  try {
+    const [packages, careers] = await Promise.all([
+      packageCollection.find({ status: { $ne: 'hidden' } }).toArray(),
+      careerCollection.find().toArray(),
+    ]);
+
+    const today = new Date().toISOString().split('T')[0];
+
+    // ✅ URLs match your actual React router paths from main.jsx
+    const staticPages = [
+      { url: '/',             priority: '1.0', changefreq: 'weekly'  },
+      { url: '/aboutus',      priority: '0.8', changefreq: 'monthly' },
+      { url: '/ourteam',      priority: '0.7', changefreq: 'monthly' },
+      { url: '/portfolio',    priority: '0.8', changefreq: 'weekly'  },
+      { url: '/career',       priority: '0.7', changefreq: 'weekly'  },
+      { url: '/buypackage',   priority: '0.9', changefreq: 'weekly'  },
+      { url: '/signin',       priority: '0.5', changefreq: 'yearly'  },
+      { url: '/clientsignin', priority: '0.5', changefreq: 'yearly'  },
+      { url: '/clientsignup', priority: '0.5', changefreq: 'yearly'  },
+    ];
+
+  
+    const packageUrls = packages.map((pkg) => ({
+      url: `/packdetails/${pkg._id}`,
+      priority: '0.8',
+      changefreq: 'weekly',
+      lastmod: pkg.updatedAt
+        ? new Date(pkg.updatedAt).toISOString().split('T')[0]
+        : today,
+    }));
+
+   
+    const careerUrls = careers.map((job) => ({
+      url: `/career/${job._id}`,
+      priority: '0.6',
+      changefreq: 'weekly',
+      lastmod: today,
+    }));
+
+    const allUrls = [...staticPages, ...packageUrls, ...careerUrls];
+
+    const urlEntries = allUrls
+      .map(({ url, priority, changefreq, lastmod }) => `
+  <url>
+    <loc>${SITE_URL}${url}</loc>
+    <lastmod>${lastmod || today}</lastmod>
+    <changefreq>${changefreq}</changefreq>
+    <priority>${priority}</priority>
+  </url>`)
+      .join('');
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urlEntries}
+</urlset>`;
+
+    res.type('application/xml');
+    res.send(xml);
+  } catch (error) {
+    console.error('Sitemap generation error:', error);
+    res.status(500).send('Error generating sitemap');
+  }
+});
 app.get('/', (req, res) => {
           res.send('Cloud company is running');
 });
@@ -219,7 +313,37 @@ app.post("/applyjob", uploadCv.single("cv"), async (req, res) => {
     });
   }
 });
+app.get('/getportfolio/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
 
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid portfolio ID' });
+    }
+
+    const item = await portfolioCollection.findOne({ _id: new ObjectId(id) });
+
+    if (!item) {
+      return res.status(404).json({ success: false, message: 'Portfolio item not found' });
+    }
+
+    // Normalize image path — same logic as /getportfolio (all items)
+    const formatted = {
+      ...item,
+      image: item.image
+        ? item.image.replace(/\\/g, '/').replace(
+            /^.*uploads\//,
+            `${req.protocol}://${req.get('host')}/uploads/`
+          )
+        : null,
+    };
+
+    res.json(formatted);
+  } catch (error) {
+    console.error('Get single portfolio error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch portfolio item' });
+  }
+});
 app.post("/portfolio", uploadPortfolioImage.single("image"), async (req, res) => {
     try {
       const {
