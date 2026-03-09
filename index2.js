@@ -146,6 +146,11 @@ async function run() {
       const plannerCollection  = client.db('Cloudcompany').collection('planner');
       const answersCollection  = client.db('Cloudcompany').collection('panswer');
       const portfolioCollection  = client.db('Cloudcompany').collection('portfolio');
+      const CommentCollection  = client.db('Cloudcompany').collection('comments');
+      const paymentCollection  = client.db('Cloudcompany').collection('payments');
+
+
+
 
 
 
@@ -273,6 +278,32 @@ app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
     console.error('Error inserting package:', error);
     res.status(500).send({ message: 'Failed to purchase package' });
   }
+});
+
+  app.get('/payment', async(req, res) =>{
+    const result = await paymentCollection.find().toArray();
+    res.send(result);
+  });
+  app.post('/addpayment', async (req, res) => {
+  const newPost = req.body;
+  console.log(newPost);
+  const result = await paymentCollection.insertOne(newPost);
+  res.send(result);
+  });
+  app.delete('/delpayment/:id', async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    console.log('delete: ');
+    const result = await paymentCollection.deleteOne(query);
+    res.send(result);
+  });
+app.put('/updateorderpayment/:id', async (req, res) => {
+  const { paymentMethod, paymentNumber, referenceCode, transactionId, paymentStatus } = req.body;
+  const result = await PsoldCollection.updateOne(
+    { _id: new ObjectId(req.params.id) },
+    { $set: { paymentMethod, paymentNumber, referenceCode, transactionId, paymentStatus } }
+  );
+  res.json({ success: result.modifiedCount > 0 });
 });
 app.post("/applyjob", uploadCv.single("cv"), async (req, res) => {
   try {
@@ -2543,6 +2574,124 @@ app.get('/socialmedia', async(req, res) =>{
 const result = await socialCollection.find().toArray();
 res.send(result);
 })
+
+app.post("/addcomment", async (req, res) => {
+  const { productId, userName, message } = req.body;
+
+  if (!productId || !userName || !message) {
+    return res.status(400).send({
+      success: false,
+      message: "All fields are required",
+    });
+  }
+
+  const newComment = {
+    productId,
+    userName,
+    message,
+    likes: 0,
+    replies: [],
+    status: "show", 
+
+    createdAt: new Date(),
+  };
+
+  const result = await CommentCollection.insertOne(newComment);
+
+  res.send({
+    success: true,
+    commentId: result.insertedId,
+  });
+});
+app.get("/allcomments", async (req, res) => {
+  const comments = await CommentCollection
+    .find()
+    .sort({ createdAt: -1 })
+    .toArray();
+
+  res.send(comments);
+});
+app.patch("/commentstatus/:commentId", async (req, res) => {
+  const { status } = req.body; // "show" | "hide"
+  const commentId = req.params.commentId;
+
+  const result = await CommentCollection.updateOne(
+    { _id: new ObjectId(commentId) },
+    { $set: { status } }
+  );
+
+  res.send({ success: true, result });
+});
+app.get("/comments/:productId", async (req, res) => {
+  const productId = req.params.productId;
+
+  const comments = await CommentCollection
+    .find({ productId })
+    .sort({ createdAt: -1 })
+    .toArray();
+
+  res.send(comments);
+});
+app.post("/replycomment/:commentId", async (req, res) => {
+  const { userName, message } = req.body;
+  const commentId = req.params.commentId;
+
+  if (!userName || !message) {
+    return res.status(400).send({
+      success: false,
+      message: "All fields are required",
+    });
+  }
+
+  const reply = {
+    _id: new ObjectId(),
+    userName,
+    message,
+    likes: 0,
+    createdAt: new Date(),
+  };
+
+  const result = await CommentCollection.updateOne(
+    { _id: new ObjectId(commentId) },
+    { $push: { replies: reply } }
+  );
+
+  res.send({
+    success: true,
+    result,
+  });
+});
+app.patch("/likecomment/:commentId", async (req, res) => {
+  const commentId = req.params.commentId;
+
+  const result = await CommentCollection.updateOne(
+    { _id: new ObjectId(commentId) },
+    { $inc: { likes: 1 } }
+  );
+
+  res.send({
+    success: true,
+    result,
+  });
+});
+app.patch("/likereply/:commentId/:replyId", async (req, res) => {
+  const { commentId, replyId } = req.params;
+
+  const result = await CommentCollection.updateOne(
+    {
+      _id: new ObjectId(commentId),
+      "replies._id": new ObjectId(replyId),
+    },
+    {
+      $inc: { "replies.$.likes": 1 },
+    }
+  );
+
+  res.send({
+    success: true,
+    result,
+  });
+});
 app.get('/faq', async(req, res) =>{
 const result = await faqCollection.find().toArray();
 res.send(result);
