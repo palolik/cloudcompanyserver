@@ -861,6 +861,87 @@ wss.on('connection', (ws, req) => {
         }
     });
 }});
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const orderId = req.body.orderId || 'unknown';
+        const dir = path.join(__dirname, 'uploads', 'chat', orderId);
+
+        // Create directory if it doesn't exist
+        fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+        // e.g.  1710000000000-report.pdf
+        const uniqueName = `${Date.now()}-${file.originalname}`;
+        cb(null, uniqueName);
+    },
+});
+
+// Accept any file type, max 20 MB per file, max 10 files per request
+const uploadchatfile = multer({
+    storage,
+    limits: { fileSize: 20 * 1024 * 1024 },
+});
+
+// ── Helper: build a public URL for a saved file ───────────────────────────────
+// Assumes you're serving the uploads folder as static files (see bottom of file)
+const getFileUrl = (orderId, filename) =>
+    `/uploads/chat/${orderId}/${filename}`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /addclichat/files
+// Accepts:  multipart/form-data
+//   fields:  orderId, bId, bName, sender, time, text (optional)
+//   files:   files[]  (one or more)
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/addclichat/files', uploadchatfile.array('files', 10), async (req, res) => {
+    const { orderId, bId, bName, sender, time, text } = req.body;
+
+    // Validate required fields
+    if (!orderId || !bId || !bName || !sender || !time) {
+        return res.status(400).json({ message: 'Missing required fields' });
+    }
+
+    if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ message: 'No files uploaded' });
+    }
+
+    try {
+        // Build attachment metadata for each uploaded file
+        const attachments = req.files.map((file) => ({
+            originalName: file.originalname,
+            filename: file.filename,
+            mimetype: file.mimetype,
+            size: file.size,
+            url: getFileUrl(orderId, file.filename),
+        }));
+
+        // Build the message document
+        const newMessage = {
+            orderId,
+            bId,
+            bName,
+            // If the client also typed text, include it; otherwise use a fallback label
+            text: text?.trim() || `📎 ${req.files.map((f) => f.originalname).join(', ')}`,
+            sender,
+            time,
+            attachments, // array of file metadata
+        };
+
+        // Persist to MongoDB
+        await clientchatCollection.insertOne(newMessage);
+
+        // Broadcast to all connected WebSocket clients for this order
+        setTimeout(() => {
+            broadcastMessage(orderId, newMessage);
+        }, 0);
+
+        res.status(201).json(newMessage);
+    } catch (error) {
+        console.error('Error saving file message:', error);
+        res.status(500).json({ message: 'Error saving file message' });
+    }
+});
 
 app.post('/addempchat', async (req, res) => {
     const { taskId, empId, empName, text, time, sender } = req.body;
@@ -1063,7 +1144,42 @@ app.get('/orders', async (req, res) => {
 }));
 res.json(updatedProducts);
 }); 
+app.get('/clientorders/:id', async (req, res) => {
+  const { id } = req.params;
+  const result = await PsoldCollection.find({ buyerid: id }).toArray();
+  const updatedProducts = result.map(product => ({
+    ...product,
+    attachments: product.attachments.map(pic =>
+      pic.replace('D:\\cloudcompanyserver', 'http://localhost:5000')
+    )
+  }));
+  res.json(updatedProducts);
+});
 
+app.get('/getorder/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || id.length !== 24) {
+      return res.status(400).json({ error: "Invalid order ID" });
+    }
+    const result = await PsoldCollection.findOne({ _id: new ObjectId(id) });
+    if (!result) return res.status(404).json({ error: "Order not found" });
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+app.get('/paidclientorders/:id', async (req, res) => {
+  const { id } = req.params;
+  const result = await PsoldCollection.find({ buyerid: id, pstatus: "paid" }).toArray();
+  const updatedProducts = result.map(product => ({
+    ...product,
+    attachments: product.attachments.map(pic =>
+      pic.replace('D:\\cloudcompanyserver', 'http://localhost:5000')
+    )
+  }));
+  res.json(updatedProducts);
+});
 app.put('/updateordercontents/:orderId', async (req, res) => {
   const { orderId } = req.params;
   const { packageContents } = req.body;
