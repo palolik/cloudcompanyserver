@@ -148,6 +148,7 @@ async function run() {
       const portfolioCollection  = client.db('Cloudcompany').collection('portfolio');
       const CommentCollection  = client.db('Cloudcompany').collection('comments');
       const paymentCollection  = client.db('Cloudcompany').collection('payments');
+      const customPackageRequestCollection = client.db('Cloudcompany').collection('custompackage');
 
 
 
@@ -188,7 +189,6 @@ app.get('/sitemap.xml', async (req, res) => {
 
     const today = new Date().toISOString().split('T')[0];
 
-    // ✅ URLs match your actual React router paths from main.jsx
     const staticPages = [
       { url: '/',             priority: '1.0', changefreq: 'weekly'  },
       { url: '/aboutus',      priority: '0.8', changefreq: 'monthly' },
@@ -297,11 +297,19 @@ app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
     const result = await paymentCollection.deleteOne(query);
     res.send(result);
   });
-app.put('/updateorderpayment/:id', async (req, res) => {
+app.put('/updateorderpayment/:id', async (req, res) => { 
   const { paymentMethod, paymentNumber, referenceCode, transactionId, paymentStatus } = req.body;
   const result = await PsoldCollection.updateOne(
     { _id: new ObjectId(req.params.id) },
     { $set: { paymentMethod, paymentNumber, referenceCode, transactionId, paymentStatus } }
+  );
+  res.json({ success: result.modifiedCount > 0 });
+});
+app.put('/updatecustomorderpayment/:id', async (req, res) => {
+  const { paymentMethod, paymentNumber, referenceCode, transactionId, paymentStatus } = req.body;
+  const result = await customPackageRequestCollection.updateOne(
+    { _id: new ObjectId(req.params.id) },
+    { $set: { paymentMethod, paymentNumber, referenceCode, transactionId, paymentStatus, pstatus: paymentStatus === 'completed' ? 'paid' : 'notpaid' } }
   );
   res.json({ success: result.modifiedCount > 0 });
 });
@@ -1146,14 +1154,30 @@ res.json(updatedProducts);
 }); 
 app.get('/clientorders/:id', async (req, res) => {
   const { id } = req.params;
-  const result = await PsoldCollection.find({ buyerid: id }).toArray();
-  const updatedProducts = result.map(product => ({
+
+  // Fetch regular orders
+  const regularOrders = await PsoldCollection.find({ buyerid: id }).toArray();
+  const updatedRegularOrders = regularOrders.map(product => ({
     ...product,
+    orderType: 'regular',
     attachments: product.attachments.map(pic =>
       pic.replace('D:\\cloudcompanyserver', 'http://localhost:5000')
     )
   }));
-  res.json(updatedProducts);
+
+  // Fetch custom package requests
+  const customOrders = await customPackageRequestCollection
+    .find({ 'requestedBy.userId': id })
+    .toArray();
+  const updatedCustomOrders = customOrders.map(order => ({
+    ...order,
+    orderType: 'custom',
+  }));
+
+  res.json({
+    regularOrders: updatedRegularOrders,
+    customOrders: updatedCustomOrders,
+  });
 });
 
 app.get('/getorder/:id', async (req, res) => {
@@ -1453,6 +1477,69 @@ app.get('/packdetails/:id', async (req, res) => {
 
   res.send({ package: result ,feedbacks:result2 });
 });
+
+
+app.post('/custom-package-requests', async (req, res) => {
+  try {
+    const request = req.body;
+    const result = await customPackageRequestCollection.insertOne(request);
+    res.send(result);
+  } catch (error) {
+    console.error('Error inserting custom package request:', error);
+    res.status(500).send({ error: 'Failed to submit request' });
+  }
+});
+
+
+app.get('/custom-package-requests', async (req, res) => {
+  try {
+    const requests = await customPackageRequestCollection
+      .find()
+      .sort({ createdAt: -1 })
+      .toArray();
+    res.send(requests);
+  } catch (error) {
+    console.error('Error fetching custom package requests:', error);
+    res.status(500).send({ error: 'Failed to fetch requests' });
+  }
+});
+
+// GET — fetch requests by a specific client userId
+app.get('/custom-package-requests/user/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const requests = await customPackageRequestCollection
+      .find({ 'requestedBy.userId': userId })
+      .sort({ createdAt: -1 })
+      .toArray();
+    res.send(requests);
+  } catch (error) {
+    console.error('Error fetching user requests:', error);
+    res.status(500).send({ error: 'Failed to fetch user requests' });
+  }
+});
+
+app.patch('/custom-package-requests/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    if (updates.status === 'started') {
+      updates.startedAt = new Date();
+    } else if (updates.status === 'completed') {
+      updates.completedAt = new Date();
+    }
+
+    const result = await customPackageRequestCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { ...updates, updatedAt: new Date() } }
+    );
+    res.send(result);
+  } catch (error) {
+    console.error('Error updating custom package request:', error);
+    res.status(500).send({ error: 'Failed to update request' });
+  }
+});
    //                                                                     Map CRUD operations 
    app.get('/map', async (req, res) => {
     const result = await mapCollection.find().toArray();
@@ -1682,6 +1769,11 @@ app.get("/couponshow", async (req, res) => {
     const result = await categoryCollection.find().toArray();
     res.send(result);
   });
+  app.get('/packages', async(req, res) =>{
+      const result = await packageCollection.find().toArray();
+      console.log(result);
+      res.send(result);
+});
   app.post('/addcategory', async (req, res) => {
   const newPost = req.body;
   console.log(newPost);
