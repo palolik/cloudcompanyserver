@@ -16,8 +16,26 @@ const server = require('http').createServer(app);
 const wss = new WebSocket.Server({ server });
 const clients = new Map();
 const SITE_URL = 'https://cloudcompany.cc';
+const nodemailer = require("nodemailer");
+const router   = express.Router();
+const Imap = require('imap');
+const { simpleParser } = require('mailparser');
 
-app.use(express.json());
+
+const transporter = nodemailer.createTransport({
+  host: "cloudcompany.cc",
+  port: 587,
+  secure: false,
+  auth: {
+    user: "prottoy.ceo@cloudcompany.cc",
+    pass: "prottoylovessamia2441139",
+  },
+});
+
+
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ limit: "25mb", extended: true }));
+app.use(bodyParser.json({ limit: "25mb" }));
 app.use(
     cors({
         origin: [
@@ -103,6 +121,7 @@ const dpStorage = multer.diskStorage({
 const uploaddp = multer({ storage: dpStorage });
 const upload = multer({ storage: storage });
 
+
 async function run() {
 
   
@@ -149,6 +168,7 @@ async function run() {
       const CommentCollection  = client.db('Cloudcompany').collection('comments');
       const paymentCollection  = client.db('Cloudcompany').collection('payments');
       const customPackageRequestCollection = client.db('Cloudcompany').collection('custompackage');
+      const emailLogCollection = client.db('Cloudcompany').collection('emaillog');
 
 
 
@@ -156,11 +176,197 @@ async function run() {
 
 
 
-  // ─────────────────────────────────────────────────────────────────────────────
-// SEO ROUTES — paste this block into your server.js inside the run() function,
-// alongside your other app.get() routes.
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Save sent email to DB ──────────────────────────────────
+app.post("/send-email", async (req, res) => {
+  const { from, to, cc, bcc, subject, body, senderName } = req.body;
+  try {
+    const attachments = [];
+    let htmlBody = body;
+    let cidIndex = 0;
 
+    const base64Regex = /src="data:(image\/[a-zA-Z]+);base64,([^"]+)"/g;
+    htmlBody = body.replace(base64Regex, (match, mimeType, base64Data) => {
+      const cid = `image${cidIndex++}@cloudcompany.cc`;
+      attachments.push({ cid, encoding: "base64", content: base64Data, contentType: mimeType });
+      return `src="cid:${cid}"`;
+    });
+
+    await transporter.sendMail({
+      from: senderName ? `"${senderName}" <${from}>` : from,
+      to: to.join(", "),
+      cc: cc?.join(", "),
+      bcc: bcc?.join(", "),
+      subject,
+      text: htmlBody.replace(/<[^>]*>/g, ""),
+      html: htmlBody,
+      attachments,
+    });
+
+    await emailLogCollection.insertOne({
+      type: "sent", from, senderName, to,
+      cc: cc || [], bcc: bcc || [],
+      subject, body: htmlBody,
+      sentAt: new Date(), read: true,
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Email send error:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── Get sent emails from DB ───────────────────────────────
+app.get("/emails/sent", async (req, res) => {
+  try {
+    const emails = await emailLogCollection
+      .find({ type: "sent" })
+      .sort({ sentAt: -1 })
+      .limit(100)
+      .toArray();
+    res.json(emails);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Fetch inbox: IMAP → save to DB → return ───────────────
+app.get("/emails/inbox", async (req, res) => {
+  
+
+  const limit = parseInt(req.query.limit) || 50;
+
+  const imap = new Imap({
+    user: "prottoy.ceo@cloudcompany.cc",
+    password: "prottoylovessamia2441139",
+    host: "cloudcompany.cc",
+    port: 993,
+    tls: true,
+    tlsOptions: { rejectUnauthorized: false },
+    connTimeout: 10000,
+    authTimeout: 10000,   
+    autotls: "always",    
+  });
+
+  const emails = [];
+  let responded = false;
+
+  const safeError = (err) => {
+    if (!responded) {
+      responded = true;
+      res.status(500).json({ error: err.message });
+    }
+  };
+
+  imap.once("ready", () => {
+    imap.openBox("INBOX", false, (err, box) => {
+      if (err) { imap.end(); return safeError(err); }
+
+      const total = box.messages.total;
+      if (total === 0) {
+        imap.end();
+        responded = true;
+        return res.json([]);
+      }
+
+      const start = Math.max(1, total - limit + 1);
+      const fetch = imap.seq.fetch(`${start}:${total}`, {
+        bodies: "", struct: true, markSeen: false,
+      });
+
+      const pending = [];
+
+      fetch.on("message", (msg) => {
+        let buffer = "";
+        let attrs = {};
+
+        msg.on("body", (stream) => {
+          stream.on("data", chunk => buffer += chunk.toString("utf8"));
+        });
+        msg.once("attributes", (a) => { attrs = a; });
+        msg.once("end", () => {
+          pending.push({ buffer, attrs });
+        });
+      });
+
+      fetch.once("end", async () => {
+        imap.end();
+
+        // Parse all messages
+        for (const { buffer, attrs } of pending) {
+          try {
+            const parsed = await simpleParser(buffer);
+            emails.push({
+              uid: attrs.uid,
+              type: "inbox",
+              from: parsed.from?.text || "",
+              to: parsed.to?.text || "",
+              subject: parsed.subject || "(no subject)",
+              body: parsed.html || parsed.textAsHtml || parsed.text || "",
+              textBody: parsed.text || "",
+              receivedAt: parsed.date || new Date(),
+              read: attrs.flags?.includes("\\Seen"),
+              flags: attrs.flags || [],
+            });
+          } catch (e) {
+            console.error("Parse error:", e);
+          }
+        }
+
+        emails.sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt));
+
+        // Upsert to DB using uid
+        if (emails.length > 0) {
+          try {
+            const ops = emails.map(email => ({
+              updateOne: {
+                filter: { type: "inbox", uid: email.uid },
+                update: { $set: email },   // ✅ $set not $setOnInsert — updates read status too
+                upsert: true,
+              },
+            }));
+            await emailLogCollection.bulkWrite(ops);
+          } catch (e) {
+            console.error("Inbox DB save error:", e);
+          }
+        }
+
+        responded = true;
+        res.json(emails);
+      });
+
+      fetch.once("error", safeError);
+    });
+  });
+
+  imap.once("error", safeError);
+  imap.once("end", () => console.log("IMAP connection ended"));
+  imap.connect();
+});
+
+// ── Get saved inbox from DB (fast load) ──────────────────
+app.get("/emails/inbox/saved", async (req, res) => {
+  try {
+    const emails = await emailLogCollection
+      .find({ type: "inbox" })
+      .sort({ receivedAt: -1 })
+      .limit(100)
+      .toArray();
+    res.json(emails);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Delete sent email from DB ─────────────────────────────
+app.delete("/emails/sent/:id", async (req, res) => {
+  try {
+    const result = await emailLogCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+    res.json({ success: result.deletedCount > 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.get('/robots.txt', (req, res) => {
   res.type('text/plain');
@@ -1100,7 +1306,6 @@ app.post("/schat/mark-read/:supportId", async (req, res) => {
     res.status(500).json({ message: "Error marking as read", error: err });
   }
 });
-
 app.get("/admin/support", async (req, res) => {
   try {
     const supports = await schatCollection
@@ -1152,11 +1357,16 @@ app.get('/orders', async (req, res) => {
 }));
 res.json(updatedProducts);
 }); 
+
 app.get('/clientorders/:id', async (req, res) => {
   const { id } = req.params;
 
-  // Fetch regular orders
-  const regularOrders = await PsoldCollection.find({ buyerid: id }).toArray();
+  // Fetch regular orders — exclude ones where feedback has been given
+  const regularOrders = await PsoldCollection.find({
+    buyerid: id,
+    feedbackgiven: { $ne: true }
+  }).toArray();
+
   const updatedRegularOrders = regularOrders.map(product => ({
     ...product,
     orderType: 'regular',
@@ -1165,10 +1375,12 @@ app.get('/clientorders/:id', async (req, res) => {
     )
   }));
 
-  // Fetch custom package requests
-  const customOrders = await customPackageRequestCollection
-    .find({ 'requestedBy.userId': id })
-    .toArray();
+  // Fetch custom package requests — exclude ones where feedback has been given
+  const customOrders = await customPackageRequestCollection.find({
+    'requestedBy.userId': id,
+    feedbackgiven: { $ne: true }
+  }).toArray();
+
   const updatedCustomOrders = customOrders.map(order => ({
     ...order,
     orderType: 'custom',
@@ -1195,14 +1407,33 @@ app.get('/getorder/:id', async (req, res) => {
 });
 app.get('/paidclientorders/:id', async (req, res) => {
   const { id } = req.params;
-  const result = await PsoldCollection.find({ buyerid: id, pstatus: "paid" }).toArray();
-  const updatedProducts = result.map(product => ({
+
+  
+  const regularOrders = await PsoldCollection.find({ buyerid: id, pstatus: "paid" }).toArray();
+  const updatedRegularOrders = regularOrders.map(product => ({
     ...product,
+    orderType: 'regular',
     attachments: product.attachments.map(pic =>
       pic.replace('D:\\cloudcompanyserver', 'http://localhost:5000')
     )
   }));
-  res.json(updatedProducts);
+
+  
+  const customOrders = await customPackageRequestCollection.find({
+    'requestedBy.userId': id,
+    pstatus: "paid"
+  }).toArray();
+  const updatedCustomOrders = customOrders.map(order => ({
+    ...order,
+    orderType: 'custom',
+  }));
+
+  // Merge and sort newest first
+  const allOrders = [...updatedRegularOrders, ...updatedCustomOrders].sort(
+    (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+  );
+
+  res.json(allOrders);
 });
 app.put('/updateordercontents/:orderId', async (req, res) => {
   const { orderId } = req.params;
@@ -1210,6 +1441,26 @@ app.put('/updateordercontents/:orderId', async (req, res) => {
 
   try {
     const result = await PsoldCollection.updateOne(
+      { _id: new ObjectId(orderId) },
+      { $set: { packageContents } }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res.status(404).json({ success: false, message: 'Order not found or not updated' });
+    }
+
+    res.json({ success: true, message: 'Package contents updated' });
+  } catch (error) {
+    console.error('Error updating package contents:', error);
+    res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+});
+app.put('/updateordercustomcontents/:orderId', async (req, res) => {
+  const { orderId } = req.params;
+  const { packageContents } = req.body;
+
+  try {
+    const result = await customPackageRequestCollection.updateOne(
       { _id: new ObjectId(orderId) },
       { $set: { packageContents } }
     );
@@ -1479,9 +1730,55 @@ app.get('/packdetails/:id', async (req, res) => {
 });
 
 
-app.post('/custom-package-requests', async (req, res) => {
+// Reuse the same upload middleware your /buypackage route uses
+// Just change the destination folder to keep custom request files separate
+
+const customUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join('uploads', 'custom-requests');
+      fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+      cb(null, `${Date.now()}-${file.originalname}`);
+    },
+  }),
+});
+
+// POST — client submits a custom package request
+app.post('/custom-package-requests', customUpload.array('mainPics'), async (req, res) => {
   try {
-    const request = req.body;
+    const {
+      projectTitle, sellPrice, projectBrief,
+      buyerid, buyername, email, bdp,
+      packageName, offeringPrice, deliveryDeadline, description,
+      status, requestedBy,
+    } = req.body;
+
+    // Same URL pattern as regular order attachments
+    const attachments = (req.files || []).map(file =>
+      `http://localhost:5000/uploads/custom-requests/${file.filename}`
+    );
+
+    const request = {
+      projectTitle,
+      sellPrice,
+      projectBrief,
+      buyerid,
+      buyername,
+      email,
+      bdp,
+      packageName,
+      offeringPrice,
+      deliveryDeadline,
+      description,
+      status: status || 'pending',
+      requestedBy: JSON.parse(requestedBy || '{}'),
+      attachments,
+      createdAt: new Date(),
+    };
+
     const result = await customPackageRequestCollection.insertOne(request);
     res.send(result);
   } catch (error) {
@@ -1489,7 +1786,6 @@ app.post('/custom-package-requests', async (req, res) => {
     res.status(500).send({ error: 'Failed to submit request' });
   }
 });
-
 
 app.get('/custom-package-requests', async (req, res) => {
   try {
@@ -1594,6 +1890,7 @@ app.patch('/custom-package-requests/:id', async (req, res) => {
     const result = await faqCollection.deleteOne(query);
     res.send(result);
   });
+
       //                                                                   Home Client CRUD operations 
   app.get('/hclient', async(req, res) =>{
     const result = await hclientCollection.find().toArray();
@@ -2517,7 +2814,7 @@ app.put('/addmoretime/:id', async (req, res) => {
 
 });
 app.post('/clientfeedbacks', async (req, res) => {
-  const { tfeedback, rating, packageId, orderid, cname, cdp } = req.body;
+  const { tfeedback, rating, packageId, orderid, cname, cdp, ctype } = req.body;
 
   try {
     const newFeedback = {
@@ -2527,6 +2824,7 @@ app.post('/clientfeedbacks', async (req, res) => {
       rating,
       cname,
       cdp,
+      ctype,
       createdAt: new Date(),
     };
 
@@ -2536,17 +2834,21 @@ app.post('/clientfeedbacks', async (req, res) => {
       return res.status(400).json({ message: 'Failed to create feedback' });
     }
 
-    // 2️⃣ Update order status in PsoldCollection
-    const result2 = await PsoldCollection.updateOne(
-      { _id: new ObjectId(orderid) },
-      { $set: { status: "completed" , feedbackgiven: true} }
+    // Update the correct collection based on ctype
+    const collection = ctype === 'custom' ? customPackageRequestCollection : PsoldCollection;
+    const query = ctype === 'custom'
+      ? { _id: new ObjectId(orderid) }
+      : { _id: new ObjectId(orderid) };
+
+    const result2 = await collection.updateOne(
+      query,
+      { $set: { status: "completed", feedbackgiven: true } }
     );
 
-    // 3️⃣ Respond with success
     res.json({
       message: 'Feedback created successfully',
       insertedId: result.insertedId,
-      modifiedCount: 1, // Keeps frontend logic working
+      modifiedCount: 1,
       orderUpdated: result2.modifiedCount > 0,
     });
   } catch (error) {
