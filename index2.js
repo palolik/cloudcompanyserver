@@ -22,17 +22,45 @@ const Imap = require('imap');
 const { simpleParser } = require('mailparser');
 
 
-const transporter = nodemailer.createTransport({
+
+const transporters = {
+  "prottoy.ceo@cloudcompany.cc": nodemailer.createTransport({
+    host: "cloudcompany.cc",
+    port: 587,
+    secure: false,
+    auth: {
+      user: "prottoy.ceo@cloudcompany.cc",
+      pass: "prottoylovessamia2441139",
+    },
+  }),
+  "info@cloudcompany.cc": nodemailer.createTransport({
+    host: "cloudcompany.cc",
+    port: 465,
+    secure: true,
+    auth: {
+      user: "info@cloudcompany.cc",
+      pass: "prottoysamia2441139",
+    },
+  }),
+  "support@cloudcompany.cc": nodemailer.createTransport({
+    host: "cloudcompany.cc",
+    port: 465,
+    secure: true,
+    auth: {
+      user: "support@cloudcompany.cc",
+      pass: "prottoyprottoy",  // ✅ support password দাও
+    },
+  }),
+};
+const infoTransporter = nodemailer.createTransport({
   host: "cloudcompany.cc",
-  port: 587,
-  secure: false,
+  port: 465,
+  secure: true,
   auth: {
-    user: "prottoy.ceo@cloudcompany.cc",
-    pass: "prottoylovessamia2441139",
+    user: "info@cloudcompany.cc",
+    pass: "prottoysamia2441139",   // .env এ INFO_PASS add করো
   },
 });
-
-
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ limit: "25mb", extended: true }));
 app.use(bodyParser.json({ limit: "25mb" }));
@@ -176,10 +204,11 @@ async function run() {
 
 
 
-// ── Save sent email to DB ──────────────────────────────────
 app.post("/send-email", async (req, res) => {
   const { from, to, cc, bcc, subject, body, senderName } = req.body;
   try {
+    const selectedTransporter = transporters[from] || transporters["prottoy.ceo@cloudcompany.cc"];
+
     const attachments = [];
     let htmlBody = body;
     let cidIndex = 0;
@@ -191,7 +220,7 @@ app.post("/send-email", async (req, res) => {
       return `src="cid:${cid}"`;
     });
 
-    await transporter.sendMail({
+    await selectedTransporter.sendMail({
       from: senderName ? `"${senderName}" <${from}>` : from,
       to: to.join(", "),
       cc: cc?.join(", "),
@@ -230,10 +259,8 @@ app.get("/emails/sent", async (req, res) => {
   }
 });
 
-// ── Fetch inbox: IMAP → save to DB → return ───────────────
 app.get("/emails/inbox", async (req, res) => {
   
-
   const limit = parseInt(req.query.limit) || 50;
 
   const imap = new Imap({
@@ -768,7 +795,7 @@ app.patch("/portfolio/:id/status", async (req, res) => {
   }
 });
 
-  app.delete('/delportfolio/:id', async (req, res) => {
+app.delete('/delportfolio/:id', async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       console.log('delete: ');
@@ -898,7 +925,6 @@ app.get('/vcount', async (req, res) => {
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
-// Critical data for first paint
 app.get('/home/critical', async (req, res) => {
   try {
     const [  maps,category,social] = await Promise.all([
@@ -1091,23 +1117,14 @@ const storage = multer.diskStorage({
     },
 });
 
-// Accept any file type, max 20 MB per file, max 10 files per request
 const uploadchatfile = multer({
     storage,
     limits: { fileSize: 20 * 1024 * 1024 },
 });
 
-// ── Helper: build a public URL for a saved file ───────────────────────────────
-// Assumes you're serving the uploads folder as static files (see bottom of file)
 const getFileUrl = (orderId, filename) =>
     `/uploads/chat/${orderId}/${filename}`;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /addclichat/files
-// Accepts:  multipart/form-data
-//   fields:  orderId, bId, bName, sender, time, text (optional)
-//   files:   files[]  (one or more)
-// ─────────────────────────────────────────────────────────────────────────────
 app.post('/addclichat/files', uploadchatfile.array('files', 10), async (req, res) => {
     const { orderId, bId, bName, sender, time, text } = req.body;
 
@@ -1361,7 +1378,6 @@ res.json(updatedProducts);
 app.get('/clientorders/:id', async (req, res) => {
   const { id } = req.params;
 
-  // Fetch regular orders — exclude ones where feedback has been given
   const regularOrders = await PsoldCollection.find({
     buyerid: id,
     feedbackgiven: { $ne: true }
@@ -1522,74 +1538,105 @@ app.post('/orderpaymentstatus/:orderid', async (req, res) => {
       return res.status(400).send({ message: 'Status is required' });
     }
 
-    // 1️⃣ Update payment status
-    const result = await PsoldCollection.updateOne(
+    await PsoldCollection.updateOne(
       { _id: new ObjectId(orderid) },
       { $set: { pstatus } }
     );
 
     if (pstatus !== "paid") {
-      return res.send({ message: "Status updated (not paid)", result });
+      return res.send({ message: "Status updated (not paid)" });
     }
-
 
     const order = await PsoldCollection.findOne({ _id: new ObjectId(orderid) });
-
     if (!order) return res.status(404).send({ message: "Order not found" });
 
-    const { packageId, buyerid } = order;
-
-    const template = await taskFlowCollection.findOne({ packageId });
-
-    if (!template)
-      return res.status(404).send({ message: "No task flow for this package" });
-
-    let previousTaskId = null;
-    let autoTasks = [];
-
-    for (let i = 0; i < template.flow.length; i++) {
-      const t = template.flow[i];
-
-      const newId = new ObjectId(); 
-      autoTasks.push({
-        _id: newId,
-        order: t.order,
-        tname: t.tname,
-        tdesc: t.tdesc,
-        rdep: t.rdep,
-        rsubdep: t.rsubdep,
-        esprts: t.esprts,
-        ttime: t.ttime,
-        tcc: t.tcc,
-
-        tfid: previousTaskId ? previousTaskId.toString() : null,
-
-        tstatus: i === 0 ? "pending" : "not activated",
-
-        taptr: "NA",
-        tmt: new Date().toISOString(),
-        tdt: "NA",
-
-        orderId: orderid,
-        packageId,
-        buyerId: buyerid,
+    // ✅ Email — সবসময়
+    try {
+      await infoTransporter.sendMail({
+        from: '"Cloud Company" <info@cloudcompany.cc>',
+        to: order.email,
+        subject: `Payment Confirmed – ${order.packageName}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 30px; border: 1px solid #e0e0e0; border-radius: 10px;">
+            <h2 style="color: #2563eb;">Payment Confirmed ✅</h2>
+            <p>Dear <strong>${order.buyername}</strong>,</p>
+            <p>Thank you! Your payment has been received. Our team will begin working shortly.</p>
+            <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin: 20px 0;">
+              <h3 style="margin: 0 0 12px; color: #1e293b;">Order Summary</h3>
+              <table style="width: 100%; font-size: 14px; color: #475569; border-collapse: collapse;">
+                <tr><td style="padding: 6px 0;"><strong>Project Title</strong></td><td>${order.projectTitle}</td></tr>
+                <tr><td style="padding: 6px 0;"><strong>Package</strong></td><td>${order.packageName}</td></tr>
+                <tr><td style="padding: 6px 0;"><strong>Amount Paid</strong></td><td>${order.sellPrice} USD </td></tr>
+                <tr><td style="padding: 6px 0;"><strong>Order ID</strong></td><td>${orderid}</td></tr>
+              </table>
+            </div>
+            <p>If you have any questions, feel free to contact us at <a href="mailto:info@cloudcompany.cc">info@cloudcompany.cc</a>.</p>
+            <br/>
+            <p style="color: #64748b; font-size: 13px;">Best regards,<br/><strong>Cloud Company Team</strong><br/>cloudcompany.cc</p>
+          </div>
+        `,
       });
-
-      // Set this ID for next loop
-      previousTaskId = newId;
+      console.log("✅ Email sent to:", order.email);
+    } catch (emailErr) {
+      console.error("❌ Email error:", emailErr.message);
     }
 
-    // 6️⃣ Insert all tasks at once
-    await tasksCollection.insertMany(autoTasks);
+    // ✅ Task flow — থাকলে create করো, না থাকলে skip
+    const { packageId, buyerid } = order;
+    const template = await taskFlowCollection.findOne({ packageId });
 
-    return res.send({
-      message: "Payment completed & tasks generated successfully",
-      createdTasks: autoTasks.length,
-    });
+    if (template) {
+      let previousTaskId = null;
+      let autoTasks = [];
+
+      for (let i = 0; i < template.flow.length; i++) {
+        const t = template.flow[i];
+        const newId = new ObjectId();
+        autoTasks.push({
+          _id: newId,
+          order: t.order,
+          tname: t.tname,
+          tdesc: t.tdesc,
+          rdep: t.rdep,
+          rsubdep: t.rsubdep,
+          esprts: t.esprts,
+          ttime: t.ttime,
+          tcc: t.tcc,
+          tfid: previousTaskId ? previousTaskId.toString() : null,
+          tstatus: i === 0 ? "pending" : "not activated",
+          taptr: "NA",
+          tmt: new Date().toISOString(),
+          tdt: "NA",
+          orderId: orderid,
+          packageId,
+          buyerId: buyerid,
+        });
+        previousTaskId = newId;
+      }
+
+      await tasksCollection.insertMany(autoTasks);
+      return res.send({ message: "Payment confirmed & tasks generated", createdTasks: autoTasks.length });
+    }
+
+    return res.send({ message: "Payment confirmed", createdTasks: 0 });
 
   } catch (error) {
     console.error("ERROR:", error);
     return res.status(500).send({ message: "Server error" });
+  }
+});
+
+app.get("/test-email", async (req, res) => {
+  try {
+    await infoTransporter.sendMail({
+      from: '"Cloud Company" <info@cloudcompany.cc>',
+      to: "azizulalamprottoy@gmail.com",  // নিজেকে পাঠাও
+      subject: "Test Email",
+      html: "<p>Test email working!</p>",
+    });
+    res.json({ success: true, message: "Email sent!" });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
   }
 });
    //                                                                  Package CRUD operations 
