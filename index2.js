@@ -86,7 +86,7 @@ app.use(
 app.use(express.json());
 app.use(bodyParser.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
+app.use('/uploads/empchat', express.static(path.join(__dirname, 'uploads', 'empchat')));
 const uploadDirectory = 'uploads';
 if (!fs.existsSync(uploadDirectory)) {
   fs.mkdirSync(uploadDirectory);
@@ -1069,6 +1069,7 @@ app.get('/home/secondary', async (req, res) => {
     res.status(500).send({ message: 'Error' });
   }
 });
+//                                                                          CHAT CHAT CHAT CHAT CHAT
 
 function broadcastMessage(identifier, message) {
     if (clients.has(identifier)) {
@@ -1080,130 +1081,71 @@ function broadcastMessage(identifier, message) {
     }
 }
 wss.on('connection', (ws, req) => {
-    const empId = req.headers['empid'];
-    const orderId = req.headers['orderid'];
-    const supportId = req.headers['supportid'];
-
-    if (empId) {
-        if (!clients.has(empId)) {
-            clients.set(empId, []);
-        }
-        clients.get(empId).push(ws);
-    } else if (orderId) {
-        if (!clients.has(orderId)) {
-            clients.set(orderId, []);
-        }
-        clients.get(orderId).push(ws);
-    } else if (supportId) {
-        if (!clients.has(supportId)) {
-            clients.set(supportId, []);
-        }
-        clients.get(supportId).push(ws);
-    }
-
-    if (empId) {
-        employeechatCollection.find({ empId }).toArray()
-            .then(messages => ws.send(JSON.stringify(messages)))
-            .catch(err => console.error('Error sending employee messages:', err));
+    const url       = new URL(req.url, 'http://localhost');
+    const taskId    = url.searchParams.get('taskId');
+    const orderId   = url.searchParams.get('orderId');
+    const supportId = url.searchParams.get('supportId');
+ 
+    const roomId = taskId || orderId || supportId;
+    if (!roomId) return ws.close();
+ 
+    if (!clients.has(roomId)) clients.set(roomId, []);
+    clients.get(roomId).push(ws);
+ 
+    // send existing messages on connect
+    if (taskId) {
+        employeechatCollection.find({ taskId }).toArray()
+            .then(msgs => ws.send(JSON.stringify(msgs)))
+            .catch(err => console.error(err));
     } else if (orderId) {
         clientchatCollection.find({ orderId }).toArray()
-            .then(messages => ws.send(JSON.stringify(messages)))
-            .catch(err => console.error('Error sending client messages:', err));
+            .then(msgs => ws.send(JSON.stringify(msgs)))
+            .catch(err => console.error(err));
     } else if (supportId) {
         schatCollection.find({ supportId }).toArray()
-            .then(messages => ws.send(JSON.stringify(messages)))
-            .catch(err => console.error('Error sending client messages:', err));
-
+            .then(msgs => ws.send(JSON.stringify(msgs)))
+            .catch(err => console.error(err));
+    }
+ 
     ws.on('message', async (message) => {
         try {
             const msg = JSON.parse(message);
             let newMessage;
-
+ 
             if (msg.taskId) {
-                newMessage = {
-                    taskId: msg.taskId,
-                    empId: msg.empId,
-                    empName: msg.empName,
-                    text: msg.text,
-                    sender: msg.sender,
-                    time: msg.time
-                };
-
-                const existingMessage = await employeechatCollection.findOne({
-                    taskId: msg.taskId,
-                    empId: msg.empId,
-                    text: msg.text,
-                    time: msg.time,
-                    sender: msg.sender
-                });
-
-                if (!existingMessage) {
+                newMessage = { taskId: msg.taskId, empId: msg.empId, empName: msg.empName, text: msg.text, sender: msg.sender, time: msg.time };
+                const exists = await employeechatCollection.findOne({ taskId: msg.taskId, empId: msg.empId, text: msg.text, time: msg.time });
+                if (!exists) {
                     await employeechatCollection.insertOne(newMessage);
                     broadcastMessage(msg.taskId, newMessage);
                 }
             } else if (msg.orderId) {
-                newMessage = {
-                    orderId: msg.orderId,
-                    bId: msg.bId,
-                    bName: msg.bName,
-                    text: msg.text,
-                    sender: msg.sender,
-                    time: msg.time
-                };
-
-                const existingMessage = await clientchatCollection.findOne({
-                    orderId: msg.orderId,
-                    bId: msg.bId,
-                    text: msg.text,
-                    time: msg.time,
-                    sender: msg.sender
-                });
-
-                if (!existingMessage) {
+                newMessage = { orderId: msg.orderId, bId: msg.bId, bName: msg.bName, text: msg.text, sender: msg.sender, time: msg.time };
+                const exists = await clientchatCollection.findOne({ orderId: msg.orderId, bId: msg.bId, text: msg.text, time: msg.time });
+                if (!exists) {
                     await clientchatCollection.insertOne(newMessage);
                     broadcastMessage(msg.orderId, newMessage);
                 }
             } else if (msg.supportId) {
-                newMessage = {
-                    supportId: msg.supportId,
-                    bId: msg.bId,
-                    bName: msg.bName,
-                    text: msg.text,
-                    sender: msg.sender,
-                    time: msg.time
-                };
-
-                const existingMessage = await schatCollection.findOne({
-                    supportId: msg.supportId,
-                    bId: msg.bId,
-                    text: msg.text,
-                    time: msg.time,
-                    sender: msg.sender
-                });
-
-                if (!existingMessage) {
+                newMessage = { supportId: msg.supportId, bId: msg.bId, bName: msg.bName, text: msg.text, sender: msg.sender, time: msg.time };
+                const exists = await schatCollection.findOne({ supportId: msg.supportId, bId: msg.bId, text: msg.text, time: msg.time });
+                if (!exists) {
                     await schatCollection.insertOne(newMessage);
                     broadcastMessage(msg.supportId, newMessage);
                 }
             }
         } catch (err) {
-            console.error('Error processing WebSocket message:', err);
+            console.error('WS message error:', err);
         }
     });
-
+ 
     ws.on('close', () => {
-        if (empId && clients.has(empId)) {
-            clients.set(empId, clients.get(empId).filter(client => client !== ws));
-            if (clients.get(empId).length === 0) clients.delete(empId);
-        } else if (orderId && clients.has(orderId)) {
-            clients.set(orderId, clients.get(orderId).filter(client => client !== ws));
-            if (clients.get(orderId).length === 0) clients.delete(orderId);
-        }else if (supportId && clients.has(supportId)) {
-            clients.set(supportId, clients.get(supportId).filter(client => client !== ws));
-            if (clients.get(supportId).length === 0) clients.delete(supportId);
+        if (clients.has(roomId)) {
+            clients.set(roomId, clients.get(roomId).filter(c => c !== ws));
+            if (clients.get(roomId).length === 0) clients.delete(roomId);
         }
     });
-}});
+});
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const orderId = req.body.orderId || 'unknown';
@@ -1228,10 +1170,32 @@ const uploadchatfile = multer({
 const getFileUrl = (orderId, filename) =>
     `/uploads/chat/${orderId}/${filename}`;
 
+
+const estorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const taskId = req.body.taskId || 'unknown'; // ← was req.body.orderId
+        const dir = path.join(__dirname, 'uploads', 'empchat', taskId); // ← was 'chat'
+        fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+        cb(null, `${Date.now()}-${file.originalname}`);
+    },
+});
+ 
+const uploadechatfile = multer({
+    storage: estorage, // ← was { estorage } which is wrong — multer ignores unknown keys
+    limits: { fileSize: 20 * 1024 * 1024 },
+});
+ 
+const geteFileUrl = (taskId, filename) =>
+    `/uploads/empchat/${taskId}/${filename}`; // ← was /uploads/chat/
+ 
+
 app.post('/addclichat/files', uploadchatfile.array('files', 10), async (req, res) => {
     const { orderId, bId, bName, sender, time, text } = req.body;
 
-    // Validate required fields
+    
     if (!orderId || !bId || !bName || !sender || !time) {
         return res.status(400).json({ message: 'Missing required fields' });
     }
@@ -1241,7 +1205,7 @@ app.post('/addclichat/files', uploadchatfile.array('files', 10), async (req, res
     }
 
     try {
-        // Build attachment metadata for each uploaded file
+       
         const attachments = req.files.map((file) => ({
             originalName: file.originalname,
             filename: file.filename,
@@ -1250,16 +1214,15 @@ app.post('/addclichat/files', uploadchatfile.array('files', 10), async (req, res
             url: getFileUrl(orderId, file.filename),
         }));
 
-        // Build the message document
+     
         const newMessage = {
             orderId,
             bId,
             bName,
-            // If the client also typed text, include it; otherwise use a fallback label
             text: text?.trim() || `📎 ${req.files.map((f) => f.originalname).join(', ')}`,
             sender,
             time,
-            attachments, // array of file metadata
+            attachments, 
         };
 
         // Persist to MongoDB
@@ -1276,33 +1239,76 @@ app.post('/addclichat/files', uploadchatfile.array('files', 10), async (req, res
         res.status(500).json({ message: 'Error saving file message' });
     }
 });
+app.post('/addempchat/files', uploadechatfile.array('files', 10), async (req, res) => {
+    const { taskId, empId, empName, sender, time, text } = req.body;
+ 
+    if (!taskId || !empId || !empName || !sender || !time) {
+        return res.status(400).json({ message: 'Missing required fields' });
+    }
+    if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ message: 'No files uploaded' });
+    }
+ 
+    try {
+        const attachments = req.files.map((file) => ({
+            originalName: file.originalname,
+            filename:     file.filename,
+            mimetype:     file.mimetype,
+            size:         file.size,
+            url:          geteFileUrl(taskId, file.filename),
+        }));
+ 
+        const newMessage = {
+            taskId,
+            empId,
+            empName,
+            text: text?.trim() || `📎 ${req.files.map(f => f.originalname).join(', ')}`,
+            sender,
+            time,
+            attachments,
+        };
+ 
+        await employeechatCollection.insertOne(newMessage);
+ 
+        setTimeout(() => {
+            broadcastMessage(taskId, newMessage); // ← was broadcastMessage(orderId, ...) — orderId is undefined here
+        }, 0);
+ 
+        res.status(201).json(newMessage);
+    } catch (error) {
+        console.error('Error saving emp file message:', error);
+        res.status(500).json({ message: 'Error saving file message' });
+    }
+});
 
 app.post('/addempchat', async (req, res) => {
     const { taskId, empId, empName, text, time, sender } = req.body;
-
+ 
     if (!taskId || !empId || !empName || !text || !time || !sender) {
         return res.status(400).json({ message: 'Missing required fields' });
     }
-
+ 
     try {
         const existingMessage = await employeechatCollection.findOne({ taskId, empId, text, time, sender });
         if (existingMessage) {
             return res.status(400).json({ message: 'Duplicate message' });
         }
-
+ 
         const newMessage = { taskId, empId, empName, text, time, sender };
         await employeechatCollection.insertOne(newMessage);
-
+ 
         res.status(201).json(newMessage);
-
+ 
         setTimeout(() => {
-            broadcastMessage(empId, newMessage);
+            broadcastMessage(taskId, newMessage); // ← was broadcastMessage(empId) — wrong room key
         }, 0);
     } catch (error) {
         console.error('Error adding employee message:', error);
         res.status(500).json({ message: 'Error adding message' });
     }
 });
+ 
+ 
 app.get('/empchat/:taskId', async (req, res) => {
     const { taskId } = req.params;
 
@@ -1426,6 +1432,7 @@ app.post("/schat/mark-read/:supportId", async (req, res) => {
     res.status(500).json({ message: "Error marking as read", error: err });
   }
 });
+
 app.get("/admin/support", async (req, res) => {
   try {
     const supports = await schatCollection
@@ -1466,6 +1473,9 @@ app.get("/admin/support", async (req, res) => {
     });
   }
 });
+
+//                                                                          CHAT CHAT CHAT CHAT CHAT
+//                                                                          ORDER ORDER ORDER
 
 app.get('/orders', async (req, res) => {
   const result = await PsoldCollection.find().toArray();
@@ -2502,73 +2512,135 @@ app.delete('/delemployee/:id', async (req, res) => {
   res.send(result);
 });
 //                                                                   Employees Client login operations 
+
 app.post('/employeelogin', async (req, res) => {
   const { remail, rpass } = req.body;
 
-  if (!remail || !rpass) {
-    return res.status(400).json({ 
-      success: false, 
-      message: 'Email and password are required' 
-    });
-  }
+  if (!remail || !rpass)
+    return res.status(400).json({ success: false, message: 'Email and password are required' });
 
   try {
     const user = await employeeCollection.findOne({ remail });
 
-    if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
-      });
-    }
+    if (!user)
+      return res.status(404).json({ success: false, message: 'User not found' });
 
-    if (user.rpass !== rpass) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'wrong password' 
-      });
-    }
+    if (user.rpass !== rpass)
+      return res.status(401).json({ success: false, message: 'Wrong password' });
+
+    // ── stamp lastActive on login ──
+    await employeeCollection.updateOne(
+      { _id: user._id },
+      { $set: { lastActive: new Date() } }
+    );
 
     const token = jwt.sign(
       {
-        userId: user._id, 
-        role: user.role,
-        email: user.remail,  
-        rname: user.rname,
-        rppic: user.rppic,   
-        rdep: user.rdep,
+        userId:  user._id,
+        role:    user.role,
+        email:   user.remail,
+        rname:   user.rname,
+        rppic:   user.rppic,
+        rdep:    user.rdep,
         rsubdep: user.rsubdep,
-        esprts: user.esprts },
-        JWT_SECRET, 
-      { expiresIn: '1h' } 
+        esprts:  user.esprts,
+      },
+      JWT_SECRET,
+      { expiresIn: '1h' }
     );
 
-    // Return the response with the token
     return res.status(200).json({
       success: true,
       message: 'Login successful',
-      token, // Provide the token to the client
+      token,
       user: {
-        id: user._id,
-        role: user.role,
-        remail: user.remail,
-        rname: user.rname,
-        rppic: user.rppic,
-        rdep: user.rdep,
+        id:      user._id,
+        role:    user.role,
+        remail:  user.remail,
+        rname:   user.rname,
+        rppic:   user.rppic,
+        rdep:    user.rdep,
         rsubdep: user.rsubdep,
-        esprts: user.esprts
-
+        esprts:  user.esprts,
       },
     });
-
   } catch (err) {
-    console.error('Login error: ', err);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Internal server error. Please try again later.' 
-    });
+    console.error('Employee login error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error.' });
   }
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  2. EMPLOYEE PING — called every 60s from the employee's profile page
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/employee-ping', async (req, res) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer '))
+      return res.status(401).json({ success: false });
+
+    const token   = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    if (!decoded?.userId) return res.status(401).json({ success: false });
+
+    await employeeCollection.updateOne(
+      { _id: new ObjectId(decoded.userId) },
+      { $set: { lastActive: new Date() } }
+    );
+
+    return res.status(200).json({ success: true });
+  } catch {
+    return res.status(401).json({ success: false });
+  }
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  3. COMBINED stampActivity middleware
+//     Updates lastActive for BOTH clients and employees on any authenticated
+//     request. Replace your existing stampActivity with this one.
+//     Register with: app.use(stampActivity)  ← before all routes
+// ─────────────────────────────────────────────────────────────────────────────
+const stampActivity = async (req, res, next) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return next();
+
+    const token   = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (!decoded?.userId) return next();
+
+    const id   = new ObjectId(decoded.userId);
+    const role = decoded.role?.toLowerCase();
+
+    if (role === 'client') {
+      clientCollection.updateOne({ _id: id }, { $set: { lastActive: new Date() } }).catch(() => {});
+    } else if (role === 'emp' || role === 'employee') {
+      employeeCollection.updateOne({ _id: id }, { $set: { lastActive: new Date() } }).catch(() => {});
+    }
+  } catch {
+    // invalid/expired token — just continue
+  }
+  next();
+};
+
+app.use(stampActivity);
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  4. /employees — make sure lastActive is included (it will be automatically
+//     since you use .find().toArray() with no projection that excludes it)
+//     No change needed if your existing /employees route is:
+//
+//     app.get('/employees', async (req, res) => {
+//       const result = await employeeCollection.find().toArray();
+//       res.json(result);
+//     });
+//
+//     If you have a projection, just add lastActive: 1 to it.
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  1. UPDATE LOGIN — save lastActive on login
@@ -2634,28 +2706,6 @@ app.post('/clientlogin', async (req, res) => {
 //  Reads the JWT from Authorization header, updates lastActive on every 
 //  authenticated request. Register with app.use(stampActivity) BEFORE routes.
 // ─────────────────────────────────────────────────────────────────────────────
-const stampActivity = async (req, res, next) => {
-  try {
-    const authHeader = req.headers["authorization"];
-    if (!authHeader || !authHeader.startsWith("Bearer ")) return next();
-
-    const token   = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
-
-    if (decoded?.userId) {
-      // fire-and-forget — never await, never block
-      clientCollection.updateOne(
-        { _id: new ObjectId(decoded.userId) },
-        { $set: { lastActive: new Date() } }
-      ).catch(() => {});
-    }
-  } catch {
-    // expired / invalid token — just continue
-  }
-  next();
-};
-
-app.use(stampActivity);
 
 
 // ─────────────────────────────────────────────────────────────────────────────
