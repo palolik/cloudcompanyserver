@@ -174,7 +174,6 @@ async function run() {
       const mapCollection = client.db('Cloudcompany').collection('mapdata');
       const employeeCollection = client.db('Cloudcompany').collection('employees');
       const clientCollection = client.db('Cloudcompany').collection('clients');
-      const hclientCollection = client.db('Cloudcompany').collection('hclients');
       const socialCollection = client.db('Cloudcompany').collection('social');
       const tasksCollection = client.db('Cloudcompany').collection('tasks');
       const advertiseCollection = client.db('Cloudcompany').collection('advertisement');
@@ -197,6 +196,7 @@ async function run() {
       const paymentCollection  = client.db('Cloudcompany').collection('payments');
       const customPackageRequestCollection = client.db('Cloudcompany').collection('custompackage');
       const emailLogCollection = client.db('Cloudcompany').collection('emaillog');
+      const manualIncomeCollection =  client.db('Cloudcompany').collection('mincome');
 
 
 
@@ -831,32 +831,135 @@ app.get("/portfolio/type/:portfolioType", async (req, res) => {
     });
   }
 });
-
 app.get('/admindashboard', async (req, res) => {
   try {
-      const soldPackage = (await PsoldCollection.find().toArray()).length;
-    const taskTotal = (await tasksCollection.find().toArray()).length;
-    const employes = (await employeeCollection.find().toArray()).length;
-    const clients = (await clientCollection.find().toArray()).length;
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-const items = await PsoldCollection.find().toArray();
-const earning = items.reduce((sum, item) => sum + Number(item.sellPrice || 0), 0);
- 
+    const [soldItems, allTasks, allEmployees, allClients, allPackages] = await Promise.all([
+      PsoldCollection.find().toArray(),
+      tasksCollection.find().toArray(),
+      employeeCollection.find().toArray(),
+      clientCollection.find().toArray(),
+      packageCollection.find().toArray(),
+    ]);
 
+    // ── Stat Cards ──────────────────────────────────────────
+    const totalEarning = soldItems.reduce((sum, item) => sum + parseFloat(item.sellPrice || 0), 0);
 
-    const result = {
-      packages: soldPackage,
-      tasks: taskTotal,
-      employees: employes,
-      clients: clients,
-      earning: earning,
+    // ── Package Status Breakdown ────────────────────────────
+    const statusCounts = { pending: 0, started: 0, completed: 0 };
+    soldItems.forEach(item => {
+      const s = item.status || 'pending';
+      statusCounts[s] = (statusCounts[s] || 0) + 1;
+    });
 
+    // ── Income by Month ─────────────────────────────────────
+    const monthlyMap = {};
+    monthNames.forEach(m => (monthlyMap[m] = 0));
+    soldItems.forEach(item => {
+      const date = new Date(item.createdAt);
+      if (date.getFullYear() === year) {
+        monthlyMap[monthNames[date.getMonth()]] += parseFloat(item.sellPrice || 0);
+      }
+    });
+    const incomeByMonth = monthNames.map(month => ({
+      month,
+      income: parseFloat(monthlyMap[month].toFixed(2)),
+    }));
 
-    };
-    res.send(result);
+    // ── Income by Category ──────────────────────────────────
+    const categoryMap = {};
+    allPackages.forEach(p => { categoryMap[p.packageName] = p.category || 'Other'; });
+    const incomeByCategoryMap = {};
+    soldItems.forEach(item => {
+      const category = categoryMap[item.packageName] || 'Other';
+      incomeByCategoryMap[category] = (incomeByCategoryMap[category] || 0) + parseFloat(item.sellPrice || 0);
+    });
+    const incomeByCategory = Object.entries(incomeByCategoryMap).map(([category, income]) => ({
+      category,
+      income: parseFloat(income.toFixed(2)),
+    }));
+
+    // ── Top Packages by Clicks ──────────────────────────────
+    const packageClicks = allPackages
+      .filter(p => p.clicks > 0)
+      .map(p => ({ name: p.packageName, clicks: p.clicks || 0, category: p.category }))
+      .sort((a, b) => b.clicks - a.clicks)
+      .slice(0, 8);
+
+    // ── Task Status Breakdown ───────────────────────────────
+    const taskStatusMap = {};
+    allTasks.forEach(task => {
+      const s = task.tstatus || 'pending';
+      taskStatusMap[s] = (taskStatusMap[s] || 0) + 1;
+    });
+    const taskStatusCounts = Object.entries(taskStatusMap).map(([status, count]) => ({ status, count }));
+
+    // ── Tasks by Department ─────────────────────────────────
+    const taskDeptMap = {};
+    allTasks.forEach(task => {
+      const dept = task.rdep || 'Unknown';
+      taskDeptMap[dept] = (taskDeptMap[dept] || 0) + 1;
+    });
+    const tasksByDepartment = Object.entries(taskDeptMap)
+      .map(([department, count]) => ({ department, count }))
+      .sort((a, b) => b.count - a.count);
+
+    // ── Top Clients list ────────────────────────────────────
+    const topClients = allClients
+      .map(client => {
+        const clientId = client._id.toString();
+        const clientOrders = soldItems.filter(o => o.buyerid === clientId);
+        const totalSpent = clientOrders.reduce((sum, o) => sum + parseFloat(o.sellPrice || 0), 0);
+        return {
+          name:       client.rname || 'Unknown',
+          email:      client.remail || '',
+          pic:        client.rppic || '',
+          atype:      client.atype || 'Personal',
+          orders:     clientOrders.length,
+          totalSpent: parseFloat(totalSpent.toFixed(2)),
+          // active = has at least one started/pending order
+          active: clientOrders.some(o => o.status === 'started' || o.status === 'pending'),
+        };
+      })
+      .sort((a, b) => b.totalSpent - a.totalSpent)
+      .slice(0, 6);
+
+    // ── Employees list ──────────────────────────────────────
+    const employeeList = allEmployees.slice(0, 6).map(emp => ({
+      name:       emp.rname || 'Unknown',
+      email:      emp.remail || '',
+      pic:        emp.rppic || '',
+      department: emp.rdep || 'N/A',
+      subDep:     emp.rsubdep || 'N/A',
+      expertise:  emp.esprts || 'N/A',
+      role:       emp.role || 'emp',
+      activeTime: emp.atime || 0,
+      tasksDone:  emp.ecc || 0,
+      xp:         emp.xp || 0,
+    }));
+
+    // ── Final Response ──────────────────────────────────────
+    res.send({
+      packages:        soldItems.length,
+      tasks:           allTasks.length,
+      employees:       allEmployees.length,
+      clients:         allClients.length,
+      earning:         totalEarning.toFixed(2),
+      statusCounts,
+      incomeByMonth,
+      incomeByCategory,
+      packageClicks,
+      taskStatusCounts,
+      tasksByDepartment,
+      topClients,
+      employeeList,
+    });
+
   } catch (error) {
     console.error(error);
-    res.status(500).send({ message: 'Error fetching data' });
+    res.status(500).send({ message: 'Error fetching dashboard data' });
   }
 });
 app.get('/stats', async (req, res) => {
@@ -951,7 +1054,7 @@ app.get('/home/secondary', async (req, res) => {
       advertiseCollection.find().toArray(),
       packageCollection.find().toArray(),
       serviceCollection.find().toArray(),
-      hclientCollection.find().toArray(),
+      clientCollection.find().toArray(),
       faqCollection.find().toArray()
     ]);
 
@@ -1550,7 +1653,7 @@ app.post('/orderpaymentstatus/:orderid', async (req, res) => {
     const order = await PsoldCollection.findOne({ _id: new ObjectId(orderid) });
     if (!order) return res.status(404).send({ message: "Order not found" });
 
-    // ✅ Email — সবসময়
+   
     try {
       await infoTransporter.sendMail({
         from: '"Cloud Company" <info@cloudcompany.cc>',
@@ -1877,6 +1980,44 @@ app.patch('/custom-package-requests/:id', async (req, res) => {
       { _id: new ObjectId(id) },
       { $set: { ...updates, updatedAt: new Date() } }
     );
+
+    // ── If pstatus is being set to "paid", send confirmation email ──
+    if (updates.pstatus === "paid") {
+      const order = await customPackageRequestCollection.findOne({ _id: new ObjectId(id) });
+
+      if (order) {
+        try {
+          await infoTransporter.sendMail({
+            from: '"Cloud Company" <info@cloudcompany.cc>',
+            to: order.email,
+            subject: `Payment Confirmed – ${order.packageName || "Custom Package"}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 30px; border: 1px solid #e0e0e0; border-radius: 10px;">
+                <h2 style="color: #2563eb;">Payment Confirmed ✅</h2>
+                <p>Dear <strong>${order.buyername || "Valued Client"}</strong>,</p>
+                <p>Thank you! Your payment has been received. Our team will begin working shortly.</p>
+                <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin: 20px 0;">
+                  <h3 style="margin: 0 0 12px; color: #1e293b;">Order Summary</h3>
+                  <table style="width: 100%; font-size: 14px; color: #475569; border-collapse: collapse;">
+                    <tr><td style="padding: 6px 0;"><strong>Project Title</strong></td><td>${order.projectTitle || "N/A"}</td></tr>
+                    <tr><td style="padding: 6px 0;"><strong>Package</strong></td><td>${order.packageName || "Custom Package"}</td></tr>
+                    <tr><td style="padding: 6px 0;"><strong>Amount Paid</strong></td><td>${order.packagePrice || order.sellPrice || "N/A"} USD</td></tr>
+                    <tr><td style="padding: 6px 0;"><strong>Order ID</strong></td><td>${id}</td></tr>
+                  </table>
+                </div>
+                <p>If you have any questions, feel free to contact us at <a href="mailto:info@cloudcompany.cc">info@cloudcompany.cc</a>.</p>
+                <br/>
+                <p style="color: #64748b; font-size: 13px;">Best regards,<br/><strong>Cloud Company Team</strong><br/>cloudcompany.cc</p>
+              </div>
+            `,
+          });
+          console.log("✅ Email sent to:", order.email);
+        } catch (emailErr) {
+          console.error("❌ Email error:", emailErr.message);
+        }
+      }
+    }
+
     res.send(result);
   } catch (error) {
     console.error('Error updating custom package request:', error);
@@ -1940,34 +2081,45 @@ app.patch('/custom-package-requests/:id', async (req, res) => {
 
       //                                                                   Home Client CRUD operations 
   app.get('/hclient', async(req, res) =>{
-    const result = await hclientCollection.find().toArray();
+    const result = await clientCollection.find().toArray();
     res.send(result);
   });
   app.post('/addhclient', async (req, res) => {
   const newPost = req.body;
   console.log(newPost);
-  const result = await hclientCollection.insertOne(newPost);
+  const result = await clientCollection.insertOne(newPost);
   res.send(result);
   });
   app.delete('/delhclient/:id', async (req, res) => {
     const id = req.params.id;
     const query = { _id: new ObjectId(id) };
     console.log('delete: ');
-    const result = await hclientCollection.deleteOne(query);
+    const result = await clientCollection.deleteOne(query);
     res.send(result);
   });
    //                                                                   Expense CRUD operations 
-  app.get('/income', async (req, res) => {
+  // ─────────────────────────────────────────────
+//  INCOME  —  Auto (from orders) + Manual CRUD
+// ─────────────────────────────────────────────
+
+// GET  — auto income from orders (more fields)
+app.get('/income', async (req, res) => {
   try {
-    // Use projection to return only specific fields
     const result = await PsoldCollection.find(
-      {}, // no filter — fetch all
+      {},
       {
         projection: {
-          sellPrice: 1,
-          buyerid: 1,
-          packageName: 1,
-          createdAt: 1
+          sellPrice:     1,
+          buyerid:       1,
+          buyername:     1,
+          email:         1,
+          packageName:   1,
+          projectTitle:  1,
+          status:        1,
+          paymentMethod: 1,
+          paymentStatus: 1,
+          transactionId: 1,
+          createdAt:     1,
         }
       }
     ).toArray();
@@ -1975,6 +2127,93 @@ app.patch('/custom-package-requests/:id', async (req, res) => {
     res.status(200).send(result);
   } catch (error) {
     console.error("Error fetching income data:", error);
+    res.status(500).send({ success: false, message: "Internal Server Error" });
+  }
+});
+
+
+// ── Manual Income Collection ──────────────────
+
+// GET  — all manual income entries
+app.get('/manual-income', async (req, res) => {
+  try {
+    const result = await manualIncomeCollection.find().sort({ createdAt: -1 }).toArray();
+    res.status(200).send(result);
+  } catch (error) {
+    console.error("Error fetching manual income:", error);
+    res.status(500).send({ success: false, message: "Internal Server Error" });
+  }
+});
+
+// POST  — add a new manual income entry
+app.post('/manual-income', async (req, res) => {
+  try {
+    const { title, amount, category, note } = req.body;
+
+    if (!title || !amount) {
+      return res.status(400).send({ success: false, message: "Title and amount are required." });
+    }
+
+    const entry = {
+      title,
+      amount:    parseFloat(amount),
+      category:  category || "General",
+      note:      note     || "",
+      createdAt: new Date(),
+    };
+
+    const result = await manualIncomeCollection.insertOne(entry);
+    res.status(201).send({ success: true, insertedId: result.insertedId });
+  } catch (error) {
+    console.error("Error adding manual income:", error);
+    res.status(500).send({ success: false, message: "Internal Server Error" });
+  }
+});
+
+// PUT  — update a manual income entry
+app.put('/manual-income/:id', async (req, res) => {
+  try {
+    const { id }                    = req.params;
+    const { title, amount, category, note } = req.body;
+
+    const result = await manualIncomeCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          title,
+          amount:    parseFloat(amount),
+          category:  category || "General",
+          note:      note     || "",
+          updatedAt: new Date(),
+        }
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({ success: false, message: "Entry not found." });
+    }
+
+    res.status(200).send({ success: true, modifiedCount: result.modifiedCount });
+  } catch (error) {
+    console.error("Error updating manual income:", error);
+    res.status(500).send({ success: false, message: "Internal Server Error" });
+  }
+});
+
+// DELETE  — delete a manual income entry
+app.delete('/manual-income/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await manualIncomeCollection.deleteOne({ _id: new ObjectId(id) });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).send({ success: false, message: "Entry not found." });
+    }
+
+    res.status(200).send({ success: true, deletedCount: result.deletedCount });
+  } catch (error) {
+    console.error("Error deleting manual income:", error);
     res.status(500).send({ success: false, message: "Internal Server Error" });
   }
 });
@@ -2330,66 +2569,122 @@ app.post('/employeelogin', async (req, res) => {
     });
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  1. UPDATE LOGIN — save lastActive on login
+// ─────────────────────────────────────────────────────────────────────────────
 app.post('/clientlogin', async (req, res) => {
   const { remail, rpass } = req.body;
 
   if (!remail || !rpass) {
-    return res.status(400).json({ 
-      success: false, 
-      message: 'Email and password are required' 
-    });
+    return res.status(400).json({ success: false, message: 'Email and password are required' });
   }
 
   try {
     const user = await clientCollection.findOne({ remail });
-    if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
-      });
-    }
-    if (user.rpass !== rpass) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Invalid password' 
-      });
-    }
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    if (user.rpass !== rpass) return res.status(401).json({ success: false, message: 'Invalid password' });
+
+    // ── stamp lastActive on login ──
+    await clientCollection.updateOne(
+      { _id: user._id },
+      { $set: { lastActive: new Date() } }
+    );
+
     const token = jwt.sign(
       {
-        
-        userId: user._id, 
-        role: user.role,
-        email: user.remail,  
-        rname: user.rname,
-        rppic: user.rppic,
+        userId:  user._id,
+        role:    user.role,
+        email:   user.remail,
+        rname:   user.rname,
+        rppic:   user.rppic,
         country: user.country,
-
       },
-      JWT_SECRET, 
-      { expiresIn: '1h' } 
+      JWT_SECRET,
+      { expiresIn: '1h' }
     );
+
     return res.status(200).json({
       success: true,
       message: 'Login successful',
-      token, 
+      token,
       user: {
-        id: user._id,
-        role: user.role,
-        remail: user.remail,
-        rname: user.rname,
-        rppic: user.rppic,
+        id:      user._id,
+        role:    user.role,
+        remail:  user.remail,
+        rname:   user.rname,
+        rppic:   user.rppic,
         country: user.country,
       },
     });
-
   } catch (err) {
-    console.error('Login error: ', err);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Internal server error. Please try again later.' 
-    });
+    console.error('Login error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error.' });
   }
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  2. MIDDLEWARE — stamp lastActive on every authenticated request
+//     Place this BEFORE your protected routes.
+//     It reads the JWT, finds the user, updates lastActive silently.
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+//  stampActivity middleware
+//  Reads the JWT from Authorization header, updates lastActive on every 
+//  authenticated request. Register with app.use(stampActivity) BEFORE routes.
+// ─────────────────────────────────────────────────────────────────────────────
+const stampActivity = async (req, res, next) => {
+  try {
+    const authHeader = req.headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer ")) return next();
+
+    const token   = authHeader.split(" ")[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    if (decoded?.userId) {
+      // fire-and-forget — never await, never block
+      clientCollection.updateOne(
+        { _id: new ObjectId(decoded.userId) },
+        { $set: { lastActive: new Date() } }
+      ).catch(() => {});
+    }
+  } catch {
+    // expired / invalid token — just continue
+  }
+  next();
+};
+
+app.use(stampActivity);
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  /client-ping  — lightweight endpoint, called every 60s from ClientProfile
+// ─────────────────────────────────────────────────────────────────────────────
+app.post("/client-ping", async (req, res) => {
+  try {
+    const authHeader = req.headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer "))
+      return res.status(401).json({ success: false });
+
+    const token   = authHeader.split(" ")[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    if (!decoded?.userId) return res.status(401).json({ success: false });
+
+    await clientCollection.updateOne(
+      { _id: new ObjectId(decoded.userId) },
+      { $set: { lastActive: new Date() } }
+    );
+
+    return res.status(200).json({ success: true });
+  } catch {
+    return res.status(401).json({ success: false });
+  }
+});
+
+
+
 app.post("/adminlogin", async (req, res) => {
 const { remail, rpass } = req.body;
 
