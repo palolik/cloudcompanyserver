@@ -1280,24 +1280,6 @@ app.post('/addempchat/files', uploadechatfile.array('files', 10), async (req, re
     }
 });
 
-app.post("/clichat/mark-read/:orderId", async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const { sender } = req.body; 
-    if (!sender) return res.status(400).json({ message: "sender is required" });
-
-    await clientchatCollection.updateMany(
-      { orderId, sender, read: false },
-      { $set: { read: true } }
-    );
-
-    broadcastMessage(orderId, { type: "read_update", orderId, sender });
-
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ message: "Error marking as read" });
-  }
-});
 
 app.post("/empchat/mark-read/:taskId", async (req, res) => {
   try {
@@ -1386,6 +1368,25 @@ app.post('/addclichat', async (req, res) => {
         res.status(500).json({ message: 'Error adding message' });
     }
 });
+app.post("/clichat/mark-read/:orderId", async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { sender } = req.body; 
+    if (!sender) return res.status(400).json({ message: "sender is required" });
+
+    await clientchatCollection.updateMany(
+      { orderId, sender, read: false },
+      { $set: { read: true } }
+    );
+
+    broadcastMessage(orderId, { type: "read_update", orderId, sender });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: "Error marking as read" });
+  }
+});
+
 app.get('/clichat/:orderId', async (req, res) => {
     const { orderId } = req.params;
 
