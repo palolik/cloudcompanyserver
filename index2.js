@@ -20,6 +20,8 @@ const nodemailer = require("nodemailer");
 const router   = express.Router();
 const Imap = require('imap');
 const { simpleParser } = require('mailparser');
+// const collection = 'Cloudcompany';
+const collection = 'Cloudcompanydev';
 
 
 
@@ -86,6 +88,7 @@ app.use(
 app.use(express.json());
 app.use(bodyParser.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 app.use('/uploads/empchat', express.static(path.join(__dirname, 'uploads', 'empchat')));
 const uploadDirectory = 'uploads';
 if (!fs.existsSync(uploadDirectory)) {
@@ -148,6 +151,7 @@ const dpStorage = multer.diskStorage({
 });
 const uploaddp = multer({ storage: dpStorage });
 const upload = multer({ storage: storage });
+const uploadPackageCover = multer({ dest: 'uploads/packages/' });
 
 
 async function run() {
@@ -164,39 +168,40 @@ async function run() {
       });
 
       await client.connect();
-      const packageCollection = client.db('Cloudcompany').collection('packages');
-      const faqCollection = client.db('Cloudcompany').collection('faq');
-      const reviewCollection = client.db('Cloudcompany').collection('reviews');
-      const couponCollection = client.db('Cloudcompany').collection('coupons');
-      const serviceCollection = client.db('Cloudcompany').collection('service');
-      const categoryCollection = client.db('Cloudcompany').collection('category');
-      const teamCollection = client.db('Cloudcompany').collection('team');
-      const mapCollection = client.db('Cloudcompany').collection('mapdata');
-      const employeeCollection = client.db('Cloudcompany').collection('employees');
-      const clientCollection = client.db('Cloudcompany').collection('clients');
-      const socialCollection = client.db('Cloudcompany').collection('social');
-      const tasksCollection = client.db('Cloudcompany').collection('tasks');
-      const advertiseCollection = client.db('Cloudcompany').collection('advertisement');
-      const clientchatCollection = client.db('Cloudcompany').collection('clientchat');
-      const employeechatCollection = client.db('Cloudcompany').collection('employeechat');
-      const schatCollection = client.db('Cloudcompany').collection('schat');
-      const PsoldCollection = client.db('Cloudcompany').collection('soldpackage');
-      const CfeedbackCollection = client.db('Cloudcompany').collection('cfeedback');
-      const marketerCollection = client.db('Cloudcompany').collection('marketing');
-      const visitorCollection = client.db('Cloudcompany').collection('visitors');
-      const rolesCollection = client.db('Cloudcompany').collection('roles');
-      const expenseCollection = client.db('Cloudcompany').collection('expense');
-      const careerCollection = client.db('Cloudcompany').collection('career');
-      const JobApplyCollection = client.db('Cloudcompany').collection('appliedcv');
-      const taskFlowCollection  = client.db('Cloudcompany').collection('taskflows');
-      const plannerCollection  = client.db('Cloudcompany').collection('planner');
-      const answersCollection  = client.db('Cloudcompany').collection('panswer');
-      const portfolioCollection  = client.db('Cloudcompany').collection('portfolio');
-      const CommentCollection  = client.db('Cloudcompany').collection('comments');
-      const paymentCollection  = client.db('Cloudcompany').collection('payments');
-      const customPackageRequestCollection = client.db('Cloudcompany').collection('custompackage');
-      const emailLogCollection = client.db('Cloudcompany').collection('emaillog');
-      const manualIncomeCollection =  client.db('Cloudcompany').collection('mincome');
+      const packageCollection = client.db(collection).collection('packages');
+      const faqCollection = client.db(collection).collection('faq');
+      const reviewCollection = client.db(collection).collection('reviews');
+      const couponCollection = client.db(collection).collection('coupons');
+      const serviceCollection = client.db(collection).collection('service');
+      const categoryCollection = client.db(collection).collection('category');
+      const teamCollection = client.db(collection).collection('team');
+      const mapCollection = client.db(collection).collection('mapdata');
+      const employeeCollection = client.db(collection).collection('employees');
+      const clientCollection = client.db(collection).collection('clients');
+      const HomeClientCollection = client.db(collection).collection('homeclients');
+      const socialCollection = client.db(collection).collection('social');
+      const tasksCollection = client.db(collection).collection('tasks');
+      const advertiseCollection = client.db(collection).collection('advertisement');
+      const clientchatCollection = client.db(collection).collection('clientchat');
+      const employeechatCollection = client.db(collection).collection('employeechat');
+      const schatCollection = client.db(collection).collection('schat');
+      const PsoldCollection = client.db(collection).collection('soldpackage');
+      const CfeedbackCollection = client.db(collection).collection('cfeedback');
+      const marketerCollection = client.db(collection).collection('marketing');
+      const visitorCollection = client.db(collection).collection('visitors');
+      const rolesCollection = client.db(collection).collection('roles');
+      const expenseCollection = client.db(collection).collection('expense');
+      const careerCollection = client.db(collection).collection('career');
+      const JobApplyCollection = client.db(collection).collection('appliedcv');
+      const taskFlowCollection  = client.db(collection).collection('taskflows');
+      const plannerCollection  = client.db(collection).collection('planner');
+      const answersCollection  = client.db(collection).collection('panswer');
+      const portfolioCollection  = client.db(collection).collection('portfolio');
+      const CommentCollection  = client.db(collection).collection('comments');
+      const paymentCollection  = client.db(collection).collection('payments');
+      const customPackageRequestCollection = client.db(collection).collection('custompackage');
+      const emailLogCollection = client.db(collection).collection('emaillog');
+      const manualIncomeCollection =  client.db(collection).collection('mincome');
 
 
 
@@ -245,7 +250,6 @@ app.post("/send-email", async (req, res) => {
   }
 });
 
-// ── Get sent emails from DB ───────────────────────────────
 app.get("/emails/sent", async (req, res) => {
   try {
     const emails = await emailLogCollection
@@ -371,7 +375,6 @@ app.get("/emails/inbox", async (req, res) => {
   imap.connect();
 });
 
-// ── Get saved inbox from DB (fast load) ──────────────────
 app.get("/emails/inbox/saved", async (req, res) => {
   try {
     const emails = await emailLogCollection
@@ -385,7 +388,6 @@ app.get("/emails/inbox/saved", async (req, res) => {
   }
 });
 
-// ── Delete sent email from DB ─────────────────────────────
 app.delete("/emails/sent/:id", async (req, res) => {
   try {
     const result = await emailLogCollection.deleteOne({ _id: new ObjectId(req.params.id) });
@@ -1054,7 +1056,7 @@ app.get('/home/secondary', async (req, res) => {
       advertiseCollection.find().toArray(),
       packageCollection.find().toArray(),
       serviceCollection.find().toArray(),
-      clientCollection.find().toArray(),
+      HomeClientCollection.find().toArray(),
       faqCollection.find().toArray()
     ]);
 
@@ -1092,7 +1094,7 @@ wss.on('connection', (ws, req) => {
     if (!clients.has(roomId)) clients.set(roomId, []);
     clients.get(roomId).push(ws);
  
-    // send existing messages on connect
+   
     if (taskId) {
         employeechatCollection.find({ taskId }).toArray()
             .then(msgs => ws.send(JSON.stringify(msgs)))
@@ -1151,12 +1153,12 @@ const storage = multer.diskStorage({
         const orderId = req.body.orderId || 'unknown';
         const dir = path.join(__dirname, 'uploads', 'chat', orderId);
 
-        // Create directory if it doesn't exist
+       
         fs.mkdirSync(dir, { recursive: true });
         cb(null, dir);
     },
     filename: (req, file, cb) => {
-        // e.g.  1710000000000-report.pdf
+       
         const uniqueName = `${Date.now()}-${file.originalname}`;
         cb(null, uniqueName);
     },
@@ -1170,30 +1172,25 @@ const uploadchatfile = multer({
 const getFileUrl = (orderId, filename) =>
     `/uploads/chat/${orderId}/${filename}`;
 
-
 const estorage = multer.diskStorage({
     destination: (req, file, cb) => {
-        const taskId = req.body.taskId || 'unknown'; // ← was req.body.orderId
-        const dir = path.join(__dirname, 'uploads', 'empchat', taskId); // ← was 'chat'
-        fs.mkdirSync(dir, { recursive: true });
+        const dir = path.join(__dirname, 'uploads', 'empchat');
+        fs.mkdirSync(dir, { recursive: true }); // ✅ always exists
         cb(null, dir);
     },
     filename: (req, file, cb) => {
         cb(null, `${Date.now()}-${file.originalname}`);
     },
 });
- 
 const uploadechatfile = multer({
-    storage: estorage, // ← was { estorage } which is wrong — multer ignores unknown keys
+    storage: estorage, 
     limits: { fileSize: 20 * 1024 * 1024 },
 });
  
-const geteFileUrl = (taskId, filename) =>
-    `/uploads/empchat/${taskId}/${filename}`; // ← was /uploads/chat/
- 
+const geteFileUrl = (taskId, filename) => `/uploads/empchat/${filename}`;
 
 app.post('/addclichat/files', uploadchatfile.array('files', 10), async (req, res) => {
-    const { orderId, bId, bName, sender, time, text } = req.body;
+    const { orderId, bId, bName, sender, time, text  } = req.body;
 
     
     if (!orderId || !bId || !bName || !sender || !time) {
@@ -1223,6 +1220,7 @@ app.post('/addclichat/files', uploadchatfile.array('files', 10), async (req, res
             sender,
             time,
             attachments, 
+            read: false
         };
 
         // Persist to MongoDB
@@ -1266,6 +1264,7 @@ app.post('/addempchat/files', uploadechatfile.array('files', 10), async (req, re
             sender,
             time,
             attachments,
+            read: false
         };
  
         await employeechatCollection.insertOne(newMessage);
@@ -1281,6 +1280,44 @@ app.post('/addempchat/files', uploadechatfile.array('files', 10), async (req, re
     }
 });
 
+app.post("/clichat/mark-read/:orderId", async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { sender } = req.body; 
+    if (!sender) return res.status(400).json({ message: "sender is required" });
+
+    await clientchatCollection.updateMany(
+      { orderId, sender, read: false },
+      { $set: { read: true } }
+    );
+
+    broadcastMessage(orderId, { type: "read_update", orderId, sender });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: "Error marking as read" });
+  }
+});
+
+app.post("/empchat/mark-read/:taskId", async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { sender } = req.body; 
+    if (!sender) return res.status(400).json({ message: "sender is required" });
+
+    await employeechatCollection.updateMany(
+      { taskId, sender, read: false },
+      { $set: { read: true } }
+    );
+
+    broadcastMessage(taskId, { type: "read_update", taskId, sender });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: "Error marking as read" });
+  }
+});
+
 app.post('/addempchat', async (req, res) => {
     const { taskId, empId, empName, text, time, sender } = req.body;
  
@@ -1294,7 +1331,7 @@ app.post('/addempchat', async (req, res) => {
             return res.status(400).json({ message: 'Duplicate message' });
         }
  
-        const newMessage = { taskId, empId, empName, text, time, sender };
+        const newMessage = { taskId, empId, empName, text, time, sender, read: false };
         await employeechatCollection.insertOne(newMessage);
  
         res.status(201).json(newMessage);
@@ -1307,7 +1344,6 @@ app.post('/addempchat', async (req, res) => {
         res.status(500).json({ message: 'Error adding message' });
     }
 });
- 
  
 app.get('/empchat/:taskId', async (req, res) => {
     const { taskId } = req.params;
@@ -1337,7 +1373,7 @@ app.post('/addclichat', async (req, res) => {
             return res.status(400).json({ message: 'Duplicate message' });
         }
 
-        const newMessage = { orderId, bId, bName, text, time, sender };
+           const newMessage = { orderId, bId, bName, text, time, sender, read: false };
         await clientchatCollection.insertOne(newMessage);
 
         res.status(201).json(newMessage);
@@ -1384,7 +1420,7 @@ app.post('/addschat', async (req, res) => {
   text,
   time,
   sender,
-  read: sender === "buyer" ? false : true, // client messages start as unread
+read: false,
 };
 
 
@@ -1399,40 +1435,36 @@ app.post('/addschat', async (req, res) => {
     res.status(500).json({ message: 'Error adding message' });
   }
 });
+// GET — just fetch, no auto-marking
 app.get('/schat/:supportId', async (req, res) => {
-    const { supportId } = req.params;
+  const { supportId } = req.params;
+  if (!supportId) return res.status(400).json({ message: 'Support ID is required' });
 
-    if (!supportId) {
-        return res.status(400).json({ message: 'Support ID is required' });
-    }
-
-    try {
-        const messages = await schatCollection.find({ supportId }).toArray();
-
-        // 🆕 Optional: Mark all client messages as read when admin views chat
-        await schatCollection.updateMany(
-            { supportId, sender: "client", read: false },
-            { $set: { read: true } }
-        );
-
-        res.status(200).json(messages);
-    } catch (error) {
-        console.error('Error fetching client chat messages:', error);
-        res.status(500).json({ message: 'Error fetching messages' });
-    }
+  try {
+    const messages = await schatCollection.find({ supportId }).toArray();
+    res.status(200).json(messages);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching messages' });
+  }
 });
+
+// POST mark-read — accepts sender in body to know whose messages to mark
 app.post("/schat/mark-read/:supportId", async (req, res) => {
   try {
+    const { supportId } = req.params;
+    const { sender } = req.body; // "user" or "manager"
+
+    if (!sender) return res.status(400).json({ message: "sender is required" });
+
     await schatCollection.updateMany(
-      { supportId: req.params.supportId, sender: "user", read: false },
+      { supportId, sender, read: false },
       { $set: { read: true } }
     );
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ message: "Error marking as read", error: err });
+    res.status(500).json({ message: "Error marking as read" });
   }
 });
-
 app.get("/admin/support", async (req, res) => {
   try {
     const supports = await schatCollection
@@ -1817,11 +1849,112 @@ app.get('/packages', async(req, res) =>{
       console.log(result);
       res.send(result);
 });
-  app.post('/addpackages', async (req, res) => {
-    const newPost = req.body;
-    console.log(newPost);
-    const result = await packageCollection.insertOne(newPost);
-    res.send(result);
+app.get('/homeclients', async(req, res) =>{
+      const result = await HomeClientCollection.find().toArray();
+      console.log(result);
+      res.send(result);
+});
+
+app.post('/addpackages', uploadPackageCover.single('packageCover'), async (req, res) => {
+    try {
+        const {
+            category,
+            packageName,
+            packagePrice,
+            packageContents,   // comes as JSON string from FormData
+            deliveryTime,
+            expressDeliveryTime,
+            expressDeliveryPrice,
+            packageDetails,
+            packageRequirements,
+        } = req.body;
+
+        const newPost = {
+            category,
+            packageName,
+            packagePrice,
+            packageContents: JSON.parse(packageContents || '[]'),
+            deliveryTime,
+            expressDeliveryTime,
+            expressDeliveryPrice,
+            packageDetails,
+            packageRequirements,
+        };
+
+        // If a cover image was uploaded, build its URL just like you do for dp
+        if (req.file) {
+            newPost.packageCover = `${req.protocol}://${req.get('host')}/uploads/packages/${req.file.filename}`;
+        }
+
+        console.log(newPost);
+        const result = await packageCollection.insertOne(newPost);
+        res.send(result);
+    } catch (error) {
+        console.error('Error adding package:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+app.get('/package/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, message: 'Invalid package ID' });
+        }
+        const result = await packageCollection.findOne({ _id: new ObjectId(id) });
+        if (!result) return res.status(404).json({ success: false, message: 'Package not found' });
+        res.json(result);
+    } catch (error) {
+        console.error('Error fetching package:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+ 
+app.put('/updatepackage/:id', uploadPackageCover.single('packageCover'), async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, message: 'Invalid package ID' });
+        }
+ 
+        const {
+            category,
+            packageName,
+            packagePrice,
+            packageContents,
+            deliveryTime,
+            expressDeliveryTime,
+            expressDeliveryPrice,
+            packageDetails,
+            packageRequirements,
+        } = req.body;
+ 
+        const updateFields = {
+            category,
+            packageName,
+            packagePrice,
+            packageContents: JSON.parse(packageContents || '[]'),
+            deliveryTime,
+            expressDeliveryTime,
+            expressDeliveryPrice,
+            packageDetails,
+            packageRequirements,
+        };
+ 
+        // Only update cover if a new file was uploaded
+        if (req.file) {
+            updateFields.packageCover = `${req.protocol}://${req.get('host')}/uploads/packages/${req.file.filename}`;
+        }
+ 
+        const result = await packageCollection.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: updateFields }
+        );
+ 
+        res.json(result);
+    } catch (error) {
+        console.error('Error updating package:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
 });
 app.post('/packageclicks/:packid', async (req, res) => {
   try {
@@ -2091,20 +2224,20 @@ app.patch('/custom-package-requests/:id', async (req, res) => {
 
       //                                                                   Home Client CRUD operations 
   app.get('/hclient', async(req, res) =>{
-    const result = await clientCollection.find().toArray();
+    const result = await HomeClientCollection.find().toArray();
     res.send(result);
   });
   app.post('/addhclient', async (req, res) => {
   const newPost = req.body;
   console.log(newPost);
-  const result = await clientCollection.insertOne(newPost);
+  const result = await HomeClientCollection.insertOne(newPost);
   res.send(result);
   });
   app.delete('/delhclient/:id', async (req, res) => {
     const id = req.params.id;
     const query = { _id: new ObjectId(id) };
     console.log('delete: ');
-    const result = await clientCollection.deleteOne(query);
+    const result = await HomeClientCollection.deleteOne(query);
     res.send(result);
   });
    //                                                                   Expense CRUD operations 
