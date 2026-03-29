@@ -78,6 +78,8 @@ app.use(
           'https://cloudcompany.cc' ,
           'https://www.cloudcompany.cc/' ,
           'https://www.cloudcompany.cc' ,
+          'http://dashboard.cloudcompany.cc', 
+          'https://dashboard.cloudcompany.cc',  
 
 
 
