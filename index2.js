@@ -20,10 +20,16 @@ const nodemailer = require("nodemailer");
 const router   = express.Router();
 const Imap = require('imap');
 const { simpleParser } = require('mailparser');
-// const collection = 'Cloudcompany';
-const collection = 'Cloudcompanydev';
+ const collection = 'Cloudcompany';
+//const collection = 'Cloudcompanydev';
 
+const webpush = require('web-push');
 
+webpush.setVapidDetails(
+  'mailto:prottoy.ceo@cloudcompany.cc',
+ 'BIf5he-5B_gZevYmrEe58o6z9gEb2vaP8UY604u25m51-HcWR84hxrF_k2XWmQtTaqjrWqL4xLI7frK1-8mV_H4',
+  'tQabVyot50UCE-TpFNoIq0n2YoFhG-Qg9eal5HOB5aI'
+);
 
 const transporters = {
   "prottoy.ceo@cloudcompany.cc": nodemailer.createTransport({
@@ -153,7 +159,37 @@ const uploaddp = multer({ storage: dpStorage });
 const upload = multer({ storage: storage });
 const uploadPackageCover = multer({ dest: 'uploads/packages/' });
 
+function isUserOnline(roomId, userId) {
+  const roomClients = clients.get(roomId) || [];
+  return roomClients.some(
+    (ws) => ws.userId === userId && ws.readyState === WebSocket.OPEN
+  );
+}
 
+async function notifyIfOffline(roomId, recipientId, message) {
+  if (isUserOnline(roomId, recipientId)) return; // already online, skip
+
+  const record = await pushSubscriptionCollection.findOne({ userId: recipientId });
+  if (!record) return; // no subscription saved
+
+  const senderName = message.bName || message.empName || 'Someone';
+  const payload = JSON.stringify({
+    title: `New message from ${senderName}`,
+    body: message.text?.startsWith('📎') ? '📎 Sent an attachment' : message.text,
+    url: `/chat/${roomId}`
+  });
+
+  try {
+    await webpush.sendNotification(record.subscription, payload);
+  } catch (err) {
+    // Subscription expired or invalid — clean it up
+    if (err.statusCode === 410 || err.statusCode === 404) {
+      await pushSubscriptionCollection.deleteOne({ userId: recipientId });
+    } else {
+      console.error('Push error:', err);
+    }
+  }
+}
 async function run() {
 
   
@@ -202,10 +238,20 @@ async function run() {
       const customPackageRequestCollection = client.db(collection).collection('custompackage');
       const emailLogCollection = client.db(collection).collection('emaillog');
       const manualIncomeCollection =  client.db(collection).collection('mincome');
+      const pushSubscriptionCollection =  client.db(collection).collection('notification');
 
+app.post('/push/subscribe', async (req, res) => {
+  const { userId, subscription } = req.body;
+  if (!userId || !subscription)
+    return res.status(400).json({ message: 'userId and subscription required' });
 
-
-
+  await pushSubscriptionCollection.updateOne(
+    { userId },
+    { $set: { userId, subscription } },
+    { upsert: true }
+  );
+  res.json({ success: true });
+});
 
 
 
@@ -836,122 +882,257 @@ app.get("/portfolio/type/:portfolioType", async (req, res) => {
 app.get('/admindashboard', async (req, res) => {
   try {
     const year = parseInt(req.query.year) || new Date().getFullYear();
-    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-    const [soldItems, allTasks, allEmployees, allClients, allPackages] = await Promise.all([
+    const monthNames = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+
+    const [
+      soldItems,
+      manualIncomes,
+      expenses,
+      allTasks,
+      allEmployees,
+      allClients,
+      allPackages
+    ] = await Promise.all([
       PsoldCollection.find().toArray(),
+      manualIncomeCollection.find().toArray(),
+      expenseCollection.find().toArray(),
       tasksCollection.find().toArray(),
       employeeCollection.find().toArray(),
       clientCollection.find().toArray(),
       packageCollection.find().toArray(),
     ]);
 
-    // ── Stat Cards ──────────────────────────────────────────
-    const totalEarning = soldItems.reduce((sum, item) => sum + parseFloat(item.sellPrice || 0), 0);
+    // ================= EARNINGS =================
+    const soldEarning = soldItems.reduce(
+      (sum, item) => sum + parseFloat(item.sellPrice || 0),
+      0
+    );
 
-    // ── Package Status Breakdown ────────────────────────────
+    const manualEarning = manualIncomes.reduce(
+      (sum, item) => sum + parseFloat(item.amount || 0),
+      0
+    );
+
+    const totalEarning = soldEarning + manualEarning;
+
+    // ================= EXPENSES =================
+    const totalExpense = expenses.reduce(
+      (sum, item) => sum + parseFloat(item.amount || 0),
+      0
+    );
+
+    const netProfit = totalEarning - totalExpense;
+
+    // ================= STATUS COUNTS =================
     const statusCounts = { pending: 0, started: 0, completed: 0 };
+
     soldItems.forEach(item => {
       const s = item.status || 'pending';
       statusCounts[s] = (statusCounts[s] || 0) + 1;
     });
 
-    // ── Income by Month ─────────────────────────────────────
-    const monthlyMap = {};
-    monthNames.forEach(m => (monthlyMap[m] = 0));
+    // ================= INCOME BY MONTH =================
+    const monthlyIncomeMap = {};
+    monthNames.forEach(m => (monthlyIncomeMap[m] = 0));
+
     soldItems.forEach(item => {
       const date = new Date(item.createdAt);
-      if (date.getFullYear() === year) {
-        monthlyMap[monthNames[date.getMonth()]] += parseFloat(item.sellPrice || 0);
+
+      if (!isNaN(date) && date.getFullYear() === year) {
+        monthlyIncomeMap[monthNames[date.getMonth()]] += parseFloat(item.sellPrice || 0);
       }
     });
+
+    manualIncomes.forEach(item => {
+      const date = new Date(item.createdAt);
+
+      if (!isNaN(date) && date.getFullYear() === year) {
+        monthlyIncomeMap[monthNames[date.getMonth()]] += parseFloat(item.amount || 0);
+      }
+    });
+
     const incomeByMonth = monthNames.map(month => ({
       month,
-      income: parseFloat(monthlyMap[month].toFixed(2)),
+      income: parseFloat(monthlyIncomeMap[month].toFixed(2)),
     }));
 
-    // ── Income by Category ──────────────────────────────────
+    // ================= EXPENSE BY MONTH =================
+    const monthlyExpenseMap = {};
+    monthNames.forEach(m => (monthlyExpenseMap[m] = 0));
+
+    expenses.forEach(item => {
+      const date = new Date(item.date || item.createdAt);
+
+      if (!isNaN(date) && date.getFullYear() === year) {
+        monthlyExpenseMap[monthNames[date.getMonth()]] += parseFloat(item.amount || 0);
+      }
+    });
+
+    const expenseByMonth = monthNames.map(month => ({
+      month,
+      expense: parseFloat(monthlyExpenseMap[month].toFixed(2)),
+    }));
+
+    // ================= PROFIT BY MONTH =================
+    const profitByMonth = monthNames.map(month => ({
+      month,
+      income: parseFloat(monthlyIncomeMap[month].toFixed(2)),
+      expense: parseFloat(monthlyExpenseMap[month].toFixed(2)),
+      profit: parseFloat((monthlyIncomeMap[month] - monthlyExpenseMap[month]).toFixed(2)),
+    }));
+
+    // ================= INCOME BY CATEGORY =================
     const categoryMap = {};
-    allPackages.forEach(p => { categoryMap[p.packageName] = p.category || 'Other'; });
+
+    allPackages.forEach(p => {
+      categoryMap[p.packageName] = p.category || 'Other';
+    });
+
     const incomeByCategoryMap = {};
+
     soldItems.forEach(item => {
       const category = categoryMap[item.packageName] || 'Other';
-      incomeByCategoryMap[category] = (incomeByCategoryMap[category] || 0) + parseFloat(item.sellPrice || 0);
-    });
-    const incomeByCategory = Object.entries(incomeByCategoryMap).map(([category, income]) => ({
-      category,
-      income: parseFloat(income.toFixed(2)),
-    }));
 
-    // ── Top Packages by Clicks ──────────────────────────────
+      incomeByCategoryMap[category] =
+        (incomeByCategoryMap[category] || 0) + parseFloat(item.sellPrice || 0);
+    });
+
+    manualIncomes.forEach(item => {
+      const category = item.category || 'Manual Income';
+
+      incomeByCategoryMap[category] =
+        (incomeByCategoryMap[category] || 0) + parseFloat(item.amount || 0);
+    });
+
+    const incomeByCategory = Object.entries(incomeByCategoryMap).map(
+      ([category, income]) => ({
+        category,
+        income: parseFloat(income.toFixed(2)),
+      })
+    );
+
+    // ================= EXPENSE BY CATEGORY =================
+    const expenseByCategoryMap = {};
+
+    expenses.forEach(item => {
+      const category = item.category || 'Other';
+
+      expenseByCategoryMap[category] =
+        (expenseByCategoryMap[category] || 0) + parseFloat(item.amount || 0);
+    });
+
+    const expenseByCategory = Object.entries(expenseByCategoryMap).map(
+      ([category, expense]) => ({
+        category,
+        expense: parseFloat(expense.toFixed(2)),
+      })
+    );
+
+    // ================= PACKAGE CLICKS =================
     const packageClicks = allPackages
       .filter(p => p.clicks > 0)
-      .map(p => ({ name: p.packageName, clicks: p.clicks || 0, category: p.category }))
+      .map(p => ({
+        name: p.packageName,
+        clicks: p.clicks || 0,
+        category: p.category,
+      }))
       .sort((a, b) => b.clicks - a.clicks)
       .slice(0, 8);
 
-    // ── Task Status Breakdown ───────────────────────────────
+    // ================= TASK STATUS =================
     const taskStatusMap = {};
+
     allTasks.forEach(task => {
       const s = task.tstatus || 'pending';
       taskStatusMap[s] = (taskStatusMap[s] || 0) + 1;
     });
-    const taskStatusCounts = Object.entries(taskStatusMap).map(([status, count]) => ({ status, count }));
 
-    // ── Tasks by Department ─────────────────────────────────
+    const taskStatusCounts = Object.entries(taskStatusMap).map(
+      ([status, count]) => ({ status, count })
+    );
+
+    // ================= TASKS BY DEPARTMENT =================
     const taskDeptMap = {};
+
     allTasks.forEach(task => {
       const dept = task.rdep || 'Unknown';
       taskDeptMap[dept] = (taskDeptMap[dept] || 0) + 1;
     });
+
     const tasksByDepartment = Object.entries(taskDeptMap)
       .map(([department, count]) => ({ department, count }))
       .sort((a, b) => b.count - a.count);
 
-    // ── Top Clients list ────────────────────────────────────
+    // ================= TOP CLIENTS =================
     const topClients = allClients
       .map(client => {
         const clientId = client._id.toString();
+
         const clientOrders = soldItems.filter(o => o.buyerid === clientId);
-        const totalSpent = clientOrders.reduce((sum, o) => sum + parseFloat(o.sellPrice || 0), 0);
+
+        const totalSpent = clientOrders.reduce(
+          (sum, o) => sum + parseFloat(o.sellPrice || 0),
+          0
+        );
+
         return {
-          name:       client.rname || 'Unknown',
-          email:      client.remail || '',
-          pic:        client.rppic || '',
-          atype:      client.atype || 'Personal',
-          orders:     clientOrders.length,
+          name: client.rname || 'Unknown',
+          email: client.remail || '',
+          pic: client.rppic || '',
+          atype: client.atype || 'Personal',
+          orders: clientOrders.length,
           totalSpent: parseFloat(totalSpent.toFixed(2)),
-          // active = has at least one started/pending order
-          active: clientOrders.some(o => o.status === 'started' || o.status === 'pending'),
+          active: clientOrders.some(
+            o => o.status === 'started' || o.status === 'pending'
+          ),
         };
       })
       .sort((a, b) => b.totalSpent - a.totalSpent)
       .slice(0, 6);
 
-    // ── Employees list ──────────────────────────────────────
+    // ================= EMPLOYEES =================
     const employeeList = allEmployees.slice(0, 6).map(emp => ({
-      name:       emp.rname || 'Unknown',
-      email:      emp.remail || '',
-      pic:        emp.rppic || '',
+      name: emp.rname || 'Unknown',
+      email: emp.remail || '',
+      pic: emp.rppic || '',
       department: emp.rdep || 'N/A',
-      subDep:     emp.rsubdep || 'N/A',
-      expertise:  emp.esprts || 'N/A',
-      role:       emp.role || 'emp',
+      subDep: emp.rsubdep || 'N/A',
+      expertise: emp.esprts || 'N/A',
+      role: emp.role || 'emp',
       activeTime: emp.atime || 0,
-      tasksDone:  emp.ecc || 0,
-      xp:         emp.xp || 0,
+      tasksDone: emp.ecc || 0,
+      xp: emp.xp || 0,
     }));
 
-    // ── Final Response ──────────────────────────────────────
     res.send({
-      packages:        soldItems.length,
-      tasks:           allTasks.length,
-      employees:       allEmployees.length,
-      clients:         allClients.length,
-      earning:         totalEarning.toFixed(2),
+      packages: soldItems.length,
+      manualIncomeCount: manualIncomes.length,
+      expenseCount: expenses.length,
+
+      tasks: allTasks.length,
+      employees: allEmployees.length,
+      clients: allClients.length,
+
+      earning: totalEarning.toFixed(2),
+      soldEarning: soldEarning.toFixed(2),
+      manualEarning: manualEarning.toFixed(2),
+
+      expense: totalExpense.toFixed(2),
+      netProfit: netProfit.toFixed(2),
+
       statusCounts,
+
       incomeByMonth,
+      expenseByMonth,
+      profitByMonth,
+
       incomeByCategory,
+      expenseByCategory,
+
       packageClicks,
       taskStatusCounts,
       tasksByDepartment,
@@ -1083,71 +1264,99 @@ function broadcastMessage(identifier, message) {
     }
 }
 wss.on('connection', (ws, req) => {
-    const url       = new URL(req.url, 'http://localhost');
-    const taskId    = url.searchParams.get('taskId');
-    const orderId   = url.searchParams.get('orderId');
-    const supportId = url.searchParams.get('supportId');
- 
-    const roomId = taskId || orderId || supportId;
-    if (!roomId) return ws.close();
- 
-    if (!clients.has(roomId)) clients.set(roomId, []);
-    clients.get(roomId).push(ws);
- 
-   
-    if (taskId) {
-        employeechatCollection.find({ taskId }).toArray()
-            .then(msgs => ws.send(JSON.stringify(msgs)))
-            .catch(err => console.error(err));
-    } else if (orderId) {
-        clientchatCollection.find({ orderId }).toArray()
-            .then(msgs => ws.send(JSON.stringify(msgs)))
-            .catch(err => console.error(err));
-    } else if (supportId) {
-        schatCollection.find({ supportId }).toArray()
-            .then(msgs => ws.send(JSON.stringify(msgs)))
-            .catch(err => console.error(err));
+  const url       = new URL(req.url, 'http://localhost');
+  const taskId    = url.searchParams.get('taskId');
+  const orderId   = url.searchParams.get('orderId');
+  const supportId = url.searchParams.get('supportId');
+  const userId    = url.searchParams.get('userId'); // ← TAG: pass this from frontend
+
+  const roomId = taskId || orderId || supportId;
+  if (!roomId) return ws.close();
+
+  // Tag the socket with userId so we can check it later
+  ws.userId = userId;
+
+  if (!clients.has(roomId)) clients.set(roomId, []);
+  clients.get(roomId).push(ws);
+
+  // Send existing messages
+  if (taskId) {
+    employeechatCollection.find({ taskId }).toArray()
+      .then(msgs => ws.send(JSON.stringify(msgs)))
+      .catch(err => console.error(err));
+  } else if (orderId) {
+    clientchatCollection.find({ orderId }).toArray()
+      .then(msgs => ws.send(JSON.stringify(msgs)))
+      .catch(err => console.error(err));
+  } else if (supportId) {
+    schatCollection.find({ supportId }).toArray()
+      .then(msgs => ws.send(JSON.stringify(msgs)))
+      .catch(err => console.error(err));
+  }
+
+  ws.on('message', async (message) => {
+    try {
+      const msg = JSON.parse(message);
+      let newMessage;
+
+      if (msg.taskId) {
+        newMessage = {
+          taskId: msg.taskId, empId: msg.empId, empName: msg.empName,
+          text: msg.text, sender: msg.sender, time: msg.time, read: false
+        };
+        const exists = await employeechatCollection.findOne({
+          taskId: msg.taskId, empId: msg.empId, text: msg.text, time: msg.time
+        });
+        if (!exists) {
+          await employeechatCollection.insertOne(newMessage);
+          broadcastMessage(msg.taskId, newMessage);
+          // Notify the employee if offline (sender is manager, recipient is empId)
+          await notifyIfOffline(msg.taskId, msg.empId, newMessage);
+        }
+
+      } else if (msg.orderId) {
+        newMessage = {
+          orderId: msg.orderId, bId: msg.bId, bName: msg.bName,
+          text: msg.text, sender: msg.sender, time: msg.time, read: false
+        };
+        const exists = await clientchatCollection.findOne({
+          orderId: msg.orderId, bId: msg.bId, text: msg.text, time: msg.time
+        });
+        if (!exists) {
+          await clientchatCollection.insertOne(newMessage);
+          broadcastMessage(msg.orderId, newMessage);
+          // Notify the client if offline
+          await notifyIfOffline(msg.orderId, msg.bId, newMessage);
+        }
+
+      } else if (msg.supportId) {
+        newMessage = {
+          supportId: msg.supportId, bId: msg.bId, bName: msg.bName,
+          text: msg.text, sender: msg.sender, time: msg.time, read: false
+        };
+        const exists = await schatCollection.findOne({
+          supportId: msg.supportId, bId: msg.bId, text: msg.text, time: msg.time
+        });
+        if (!exists) {
+          await schatCollection.insertOne(newMessage);
+          broadcastMessage(msg.supportId, newMessage);
+          // Notify the client if offline
+          await notifyIfOffline(msg.supportId, msg.bId, newMessage);
+        }
+      }
+    } catch (err) {
+      console.error('WS message error:', err);
     }
- 
-    ws.on('message', async (message) => {
-        try {
-            const msg = JSON.parse(message);
-            let newMessage;
- 
-            if (msg.taskId) {
-                newMessage = { taskId: msg.taskId, empId: msg.empId, empName: msg.empName, text: msg.text, sender: msg.sender, time: msg.time };
-                const exists = await employeechatCollection.findOne({ taskId: msg.taskId, empId: msg.empId, text: msg.text, time: msg.time });
-                if (!exists) {
-                    await employeechatCollection.insertOne(newMessage);
-                    broadcastMessage(msg.taskId, newMessage);
-                }
-            } else if (msg.orderId) {
-                newMessage = { orderId: msg.orderId, bId: msg.bId, bName: msg.bName, text: msg.text, sender: msg.sender, time: msg.time };
-                const exists = await clientchatCollection.findOne({ orderId: msg.orderId, bId: msg.bId, text: msg.text, time: msg.time });
-                if (!exists) {
-                    await clientchatCollection.insertOne(newMessage);
-                    broadcastMessage(msg.orderId, newMessage);
-                }
-            } else if (msg.supportId) {
-                newMessage = { supportId: msg.supportId, bId: msg.bId, bName: msg.bName, text: msg.text, sender: msg.sender, time: msg.time };
-                const exists = await schatCollection.findOne({ supportId: msg.supportId, bId: msg.bId, text: msg.text, time: msg.time });
-                if (!exists) {
-                    await schatCollection.insertOne(newMessage);
-                    broadcastMessage(msg.supportId, newMessage);
-                }
-            }
-        } catch (err) {
-            console.error('WS message error:', err);
-        }
-    });
- 
-    ws.on('close', () => {
-        if (clients.has(roomId)) {
-            clients.set(roomId, clients.get(roomId).filter(c => c !== ws));
-            if (clients.get(roomId).length === 0) clients.delete(roomId);
-        }
-    });
+  });
+
+  ws.on('close', () => {
+    if (clients.has(roomId)) {
+      clients.set(roomId, clients.get(roomId).filter(c => c !== ws));
+      if (clients.get(roomId).length === 0) clients.delete(roomId);
+    }
+  });
 });
+
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const orderId = req.body.orderId || 'unknown';
@@ -1280,7 +1489,6 @@ app.post('/addempchat/files', uploadechatfile.array('files', 10), async (req, re
     }
 });
 
-
 app.post("/empchat/mark-read/:taskId", async (req, res) => {
   try {
     const { taskId } = req.params;
@@ -1299,7 +1507,6 @@ app.post("/empchat/mark-read/:taskId", async (req, res) => {
     res.status(500).json({ message: "Error marking as read" });
   }
 });
-
 app.post('/addempchat', async (req, res) => {
     const { taskId, empId, empName, text, time, sender } = req.body;
  
@@ -1318,15 +1525,16 @@ app.post('/addempchat', async (req, res) => {
  
         res.status(201).json(newMessage);
  
-        setTimeout(() => {
-            broadcastMessage(taskId, newMessage); // ← was broadcastMessage(empId) — wrong room key
-        }, 0);
+       setTimeout(async () => {
+  broadcastMessage(taskId, newMessage);
+  await notifyIfOffline(taskId, empId, newMessage); 
+}, 0);
     } catch (error) {
         console.error('Error adding employee message:', error);
         res.status(500).json({ message: 'Error adding message' });
     }
 });
- 
+
 app.get('/empchat/:taskId', async (req, res) => {
     const { taskId } = req.params;
 
@@ -1360,9 +1568,12 @@ app.post('/addclichat', async (req, res) => {
 
         res.status(201).json(newMessage);
 
-        setTimeout(() => {
-            broadcastMessage(orderId, newMessage);
-        }, 0);
+      setTimeout(async () => {
+  broadcastMessage(orderId, newMessage);
+  await notifyIfOffline(orderId, bId, newMessage); // notify the client
+}, 0);
+
+        
     } catch (error) {
         console.error('Error adding client message:', error);
         res.status(500).json({ message: 'Error adding message' });
@@ -1436,7 +1647,6 @@ read: false,
     res.status(500).json({ message: 'Error adding message' });
   }
 });
-// GET — just fetch, no auto-marking
 app.get('/schat/:supportId', async (req, res) => {
   const { supportId } = req.params;
   if (!supportId) return res.status(400).json({ message: 'Support ID is required' });
@@ -1449,7 +1659,6 @@ app.get('/schat/:supportId', async (req, res) => {
   }
 });
 
-// POST mark-read — accepts sender in body to know whose messages to mark
 app.post("/schat/mark-read/:supportId", async (req, res) => {
   try {
     const { supportId } = req.params;
@@ -1464,8 +1673,7 @@ app.post("/schat/mark-read/:supportId", async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ message: "Error marking as read" });
-  }
-});
+  }});
 app.get("/admin/support", async (req, res) => {
   try {
     const supports = await schatCollection
@@ -1704,7 +1912,7 @@ app.post('/orderpaymentstatus/:orderid', async (req, res) => {
         subject: `Payment Confirmed – ${order.packageName}`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 30px; border: 1px solid #e0e0e0; border-radius: 10px;">
-            <h2 style="color: #2563eb;">Payment Confirmed ✅</h2>
+            <h2 style="color: #2563eb;">Payment Confirmed </h2>
             <p>Dear <strong>${order.buyername}</strong>,</p>
             <p>Thank you! Your payment has been received. Our team will begin working shortly.</p>
             <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin: 20px 0;">
@@ -1722,9 +1930,9 @@ app.post('/orderpaymentstatus/:orderid', async (req, res) => {
           </div>
         `,
       });
-      console.log("✅ Email sent to:", order.email);
+      console.log(" Email sent to:", order.email);
     } catch (emailErr) {
-      console.error("❌ Email error:", emailErr.message);
+      console.error(" Email error:", emailErr.message);
     }
 
     // ✅ Task flow — থাকলে create করো, না থাকলে skip
@@ -2204,7 +2412,7 @@ app.patch('/custom-package-requests/:id', async (req, res) => {
     const result = await careerCollection.deleteOne(query);
     res.send(result);
   });
-    //                                                                   FAQ CRUD operations 
+    //                                                                       FAQ CRUD operations 
   app.get('/faq', async(req, res) =>{
     const result = await faqCollection.find().toArray();
     res.send(result);
@@ -2241,12 +2449,7 @@ app.patch('/custom-package-requests/:id', async (req, res) => {
     const result = await HomeClientCollection.deleteOne(query);
     res.send(result);
   });
-   //                                                                   Expense CRUD operations 
-  // ─────────────────────────────────────────────
-//  INCOME  —  Auto (from orders) + Manual CRUD
-// ─────────────────────────────────────────────
-
-// GET  — auto income from orders (more fields)
+   //                                                             ====     Income CRUD operations    =====
 app.get('/income', async (req, res) => {
   try {
     const result = await PsoldCollection.find(
@@ -2274,11 +2477,67 @@ app.get('/income', async (req, res) => {
     res.status(500).send({ success: false, message: "Internal Server Error" });
   }
 });
+app.put('/income/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      sellPrice,
+      buyerid,
+      buyername,
+      email,
+      packageName,
+      projectTitle,
+      status,
+      paymentMethod,
+      paymentStatus,
+      transactionId,
+    } = req.body;
 
+    const result = await PsoldCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          sellPrice:     sellPrice     ? parseFloat(sellPrice) : undefined,
+          buyerid,
+          buyername,
+          email,
+          packageName,
+          projectTitle,
+          status,
+          paymentMethod,
+          paymentStatus,
+          transactionId,
+          updatedAt:     new Date(),
+        }
+      }
+    );
 
-// ── Manual Income Collection ──────────────────
+    if (result.matchedCount === 0) {
+      return res.status(404).send({ success: false, message: "Entry not found." });
+    }
 
-// GET  — all manual income entries
+    res.status(200).send({ success: true, modifiedCount: result.modifiedCount });
+  } catch (error) {
+    console.error("Error updating income entry:", error);
+    res.status(500).send({ success: false, message: "Internal Server Error" });
+  }
+});
+app.delete('/income/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await PsoldCollection.deleteOne({ _id: new ObjectId(id) });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).send({ success: false, message: "Entry not found." });
+    }
+
+    res.status(200).send({ success: true, deletedCount: result.deletedCount });
+  } catch (error) {
+    console.error("Error deleting income entry:", error);
+    res.status(500).send({ success: false, message: "Internal Server Error" });
+  }
+});
 app.get('/manual-income', async (req, res) => {
   try {
     const result = await manualIncomeCollection.find().sort({ createdAt: -1 }).toArray();
@@ -2288,8 +2547,6 @@ app.get('/manual-income', async (req, res) => {
     res.status(500).send({ success: false, message: "Internal Server Error" });
   }
 });
-
-// POST  — add a new manual income entry
 app.post('/manual-income', async (req, res) => {
   try {
     const { title, amount, category, note } = req.body;
@@ -2313,8 +2570,6 @@ app.post('/manual-income', async (req, res) => {
     res.status(500).send({ success: false, message: "Internal Server Error" });
   }
 });
-
-// PUT  — update a manual income entry
 app.put('/manual-income/:id', async (req, res) => {
   try {
     const { id }                    = req.params;
@@ -2343,8 +2598,6 @@ app.put('/manual-income/:id', async (req, res) => {
     res.status(500).send({ success: false, message: "Internal Server Error" });
   }
 });
-
-// DELETE  — delete a manual income entry
 app.delete('/manual-income/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -2361,6 +2614,7 @@ app.delete('/manual-income/:id', async (req, res) => {
     res.status(500).send({ success: false, message: "Internal Server Error" });
   }
 });
+   //                                                             ====      Expense CRUD operations    =====
 
   app.get('/expense', async(req, res) =>{
     const result = await expenseCollection.find().toArray();
@@ -3606,10 +3860,38 @@ app.put("/marketer/coupon/:code", async (req, res) => {
     res.status(500).json({ success: false, message: "Error updating coupon count" });
   }
 });
+
+//                                                                   =====       Socia lMedia Social Media Social Media   =====
+
 app.get('/socialmedia', async(req, res) =>{
 const result = await socialCollection.find().toArray();
 res.send(result);
 })
+app.post('/addsocials', async (req, res) => {
+  try {
+    const newRole = req.body;
+   
+    const result = await socialCollection.insertOne(newRole);
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Error adding Social" });
+  }
+});
+app.delete('/delsocial/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+
+    const result = await socialCollection.deleteOne({
+      _id: new ObjectId(id),
+    });
+
+    res.send(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+//                                                                   =====       Comments Comments Comments Comments  =====
 
 app.post("/addcomment", async (req, res) => {
   const { productId, userName, message } = req.body;
@@ -3728,10 +4010,7 @@ app.patch("/likereply/:commentId/:replyId", async (req, res) => {
     result,
   });
 });
-app.get('/faq', async(req, res) =>{
-const result = await faqCollection.find().toArray();
-res.send(result);
-})
+
 app.post('/addplanner', async (req, res) => {
   try {
     const { title, questions } = req.body;
@@ -3759,7 +4038,7 @@ app.post('/addplanner', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-//                                                                           Get ALL planners
+//                                                                      =====          Planners Planners Planners Planners      =====  
 app.get('/getque', async (req, res) => {
   try {
     const result = await plannerCollection.find().toArray();
@@ -3900,4 +4179,5 @@ app.post("/submitanswers", async (req, res) => {
   } finally {
   }
 }
+
 run().catch(console.dir);
