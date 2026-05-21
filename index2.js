@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const crypto = require("crypto");
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const app = express();
@@ -22,7 +23,6 @@ const Imap = require('imap');
 const { simpleParser } = require('mailparser');
  const collection = 'Cloudcompany';
 //const collection = 'Cloudcompanydev';
-
 const webpush = require('web-push');
 
 webpush.setVapidDetails(
@@ -159,37 +159,109 @@ const uploaddp = multer({ storage: dpStorage });
 const upload = multer({ storage: storage });
 const uploadPackageCover = multer({ dest: 'uploads/packages/' });
 
-function isUserOnline(roomId, userId) {
-  const roomClients = clients.get(roomId) || [];
-  return roomClients.some(
-    (ws) => ws.userId === userId && ws.readyState === WebSocket.OPEN
-  );
-}
 
-async function notifyIfOffline(roomId, recipientId, message) {
-  if (isUserOnline(roomId, recipientId)) return; // already online, skip
+const blogStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    let dirPath;
 
-  const record = await pushSubscriptionCollection.findOne({ userId: recipientId });
-  if (!record) return; // no subscription saved
-
-  const senderName = message.bName || message.empName || 'Someone';
-  const payload = JSON.stringify({
-    title: `New message from ${senderName}`,
-    body: message.text?.startsWith('📎') ? '📎 Sent an attachment' : message.text,
-    url: `/chat/${roomId}`
-  });
-
-  try {
-    await webpush.sendNotification(record.subscription, payload);
-  } catch (err) {
-    // Subscription expired or invalid — clean it up
-    if (err.statusCode === 410 || err.statusCode === 404) {
-      await pushSubscriptionCollection.deleteOne({ userId: recipientId });
+    if (file.fieldname === "coverImage") {
+      dirPath = path.join(__dirname, "uploads", "blogs", "covers");
+    } else if (file.fieldname === "jsxFile") {
+      dirPath = path.join(__dirname, "uploads", "blogs", "jsx");
+    } else if (file.fieldname === "blogImages") {
+      dirPath = path.join(__dirname, "uploads", "blogs", "images");
     } else {
-      console.error('Push error:', err);
+      dirPath = path.join(__dirname, "uploads", "blogs");
+    }
+
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+    }
+
+    cb(null, dirPath);
+  },
+
+  filename: function (req, file, cb) {
+    const cleanName = file.originalname.replace(/\s+/g, "_");
+    cb(null, Date.now() + "-" + cleanName);
+  },
+});
+
+const blogFileFilter = (req, file, cb) => {
+  if (file.fieldname === "coverImage" || file.fieldname === "blogImages") {
+    const allowedImages = [
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+    ];
+
+    if (!allowedImages.includes(file.mimetype)) {
+      return cb(
+        new Error("Only JPG, PNG, WEBP, and GIF images are allowed"),
+        false
+      );
     }
   }
-}
+
+  if (file.fieldname === "jsxFile") {
+    const ext = path.extname(file.originalname).toLowerCase();
+
+    if (ext !== ".jsx") {
+      return cb(new Error("Only JSX files are allowed"), false);
+    }
+  }
+
+  cb(null, true);
+};
+
+const uploadBlog = multer({
+  storage: blogStorage,
+  fileFilter: blogFileFilter,
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+  },
+});
+const blogImageStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const dirPath = path.join(__dirname, "uploads", "blogs", "images");
+
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+    }
+
+    cb(null, dirPath);
+  },
+
+  filename: function (req, file, cb) {
+    const cleanName = file.originalname.replace(/\s+/g, "_");
+    cb(null, Date.now() + "-" + cleanName);
+  },
+});
+
+const uploadBlogImage = multer({
+  storage: blogImageStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+  },
+
+  fileFilter: function (req, file, cb) {
+    const allowedImages = [
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+    ];
+
+    if (!allowedImages.includes(file.mimetype)) {
+      return cb(new Error("Only JPG, PNG, WEBP, and GIF images are allowed"), false);
+    }
+
+    cb(null, true);
+  },
+});
 async function run() {
 
   
@@ -239,7 +311,330 @@ async function run() {
       const emailLogCollection = client.db(collection).collection('emaillog');
       const manualIncomeCollection =  client.db(collection).collection('mincome');
       const pushSubscriptionCollection =  client.db(collection).collection('notification');
+      const passwordOtpCollection =  client.db(collection).collection("passwordOtps");
+      const blogCollection =  client.db(collection).collection("blogs");
 
+function isUserOnline(roomId, userId) {
+  const roomClients = clients.get(roomId) || [];
+  return roomClients.some(
+    (ws) => ws.userId === userId && ws.readyState === WebSocket.OPEN
+  );
+}
+
+async function notifyIfOffline(roomId, recipientId, message) {
+  if (isUserOnline(roomId, recipientId)) return; // already online, skip
+
+  const record = await pushSubscriptionCollection.findOne({ userId: recipientId });
+  if (!record) return; // no subscription saved
+
+  const senderName = message.bName || message.empName || 'Someone';
+  const payload = JSON.stringify({
+    title: `New message from ${senderName}`,
+    body: message.text?.startsWith('📎') ? '📎 Sent an attachment' : message.text,
+    url: `/chat/${roomId}`
+  });
+
+  try {
+    await webpush.sendNotification(record.subscription, payload);
+  } catch (err) {
+    // Subscription expired or invalid — clean it up
+    if (err.statusCode === 410 || err.statusCode === 404) {
+      await pushSubscriptionCollection.deleteOne({ userId: recipientId });
+    } else {
+      console.error('Push error:', err);
+    }
+  }
+}
+const createSlug = (text) => {
+  return text
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+};
+
+ app.post("/upload-blog-image", uploadBlogImage.single("image"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).send({
+        success: false,
+        message: "Image is required.",
+      });
+    }
+
+    const imageUrl = `${req.protocol}://${req.get("host")}/uploads/blogs/images/${req.file.filename}`;
+
+    res.status(200).send({
+      success: true,
+      message: "Blog image uploaded successfully.",
+      imageUrl,
+      imagePath: req.file.path,
+    });
+  } catch (error) {
+    console.error("Blog image upload error:", error);
+
+    res.status(500).send({
+      success: false,
+      message: "Failed to upload blog image.",
+      error: error.message,
+    });
+  }
+});
+app.post(
+  "/addblog",
+  uploadBlog.fields([
+    { name: "coverImage", maxCount: 1 },
+    { name: "jsxFile", maxCount: 1 },
+    { name: "blogImages", maxCount: 20 },
+  ]),
+  async (req, res) => {
+    try {
+      const {
+        title,
+        shortDescription,
+        author,
+        tags,
+        status,
+      } = req.body;
+
+      if (!title || !shortDescription) {
+        return res.status(400).send({
+          success: false,
+          message: "Title and short description are required.",
+        });
+      }
+
+      if (!req.files?.coverImage?.[0]) {
+        return res.status(400).send({
+          success: false,
+          message: "Cover image is required.",
+        });
+      }
+
+      const baseSlug = createSlug(title);
+      let slug = baseSlug;
+      let count = 1;
+
+      while (await blogCollection.findOne({ slug })) {
+        slug = `${baseSlug}-${count}`;
+        count++;
+      }
+
+      const coverFile = req.files.coverImage[0];
+      const jsxFile = req.files?.jsxFile?.[0];
+
+      const blogImages = (req.files?.blogImages || []).map((file) => ({
+        originalName: file.originalname,
+        imageUrl: `${req.protocol}://${req.get("host")}/uploads/blogs/images/${file.filename}`,
+        imagePath: file.path,
+      }));
+
+      const newBlog = {
+        title,
+        slug,
+        shortDescription,
+        author: author || "Cloud Company",
+        tags: tags ? JSON.parse(tags) : [],
+        status: status || "draft",
+
+        coverImage: `${req.protocol}://${req.get("host")}/uploads/blogs/covers/${coverFile.filename}`,
+        coverImagePath: coverFile.path,
+
+        jsxFile: jsxFile
+          ? `${req.protocol}://${req.get("host")}/uploads/blogs/jsx/${jsxFile.filename}`
+          : null,
+        jsxFilePath: jsxFile ? jsxFile.path : null,
+
+        blogImages,
+
+        views: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const result = await blogCollection.insertOne(newBlog);
+
+      res.status(201).send({
+        success: true,
+        message: "Blog added successfully.",
+        insertedId: result.insertedId,
+        blog: {
+          _id: result.insertedId,
+          ...newBlog,
+        },
+      });
+    } catch (error) {
+      console.error("Error adding blog:", error);
+
+      res.status(500).send({
+        success: false,
+        message: "Failed to add blog.",
+        error: error.message,
+      });
+    }
+  }
+);
+app.get("/publicblogs", async (req, res) => {
+  try {
+    const result = await blogCollection
+      .find({ status: "published" })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.send(result);
+  } catch (error) {
+    console.error("Error fetching public blogs:", error);
+
+    res.status(500).send({
+      success: false,
+      message: "Failed to fetch public blogs",
+      error: error.message,
+    });
+  }
+});
+app.get("/blogdetails/:slug", async (req, res) => {
+  try {
+    const slug = req.params.slug;
+
+    const result = await blogCollection.findOne({
+      slug,
+      status: "published",
+    });
+
+    if (!result) {
+      return res.status(404).send({
+        success: false,
+        message: "Blog not found",
+      });
+    }
+
+    await blogCollection.updateOne(
+      { _id: result._id },
+      {
+        $inc: { views: 1 },
+        $set: { lastViewedAt: new Date() },
+      }
+    );
+
+    res.send({
+      ...result,
+      views: Number(result.views || 0) + 1,
+    });
+  } catch (error) {
+    console.error("Error fetching blog details:", error);
+
+    res.status(500).send({
+      success: false,
+      message: "Failed to fetch blog details",
+      error: error.message,
+    });
+  }
+});
+app.get("/blogdetails-admin/:slug", async (req, res) => {
+  try {
+    const slug = req.params.slug;
+
+    const result = await blogCollection.findOne({ slug });
+
+    if (!result) {
+      return res.status(404).send({
+        success: false,
+        message: "Blog not found",
+      });
+    }
+
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({
+      success: false,
+      message: "Failed to fetch blog",
+      error: error.message,
+    });
+  }
+});
+app.get("/blogjsx/:slug", async (req, res) => {
+  try {
+    const slug = req.params.slug;
+
+    const blog = await blogCollection.findOne({
+      slug,
+  
+    });
+
+    if (!blog) {
+      return res.status(404).send({
+        success: false,
+        message: "Blog not found",
+      });
+    }
+
+    if (!blog.jsxFilePath) {
+      return res.status(404).send({
+        success: false,
+        message: "JSX file path not found",
+      });
+    }
+
+    if (!fs.existsSync(blog.jsxFilePath)) {
+      return res.status(404).send({
+        success: false,
+        message: "JSX file not found on server",
+      });
+    }
+
+    const jsxCode = fs.readFileSync(blog.jsxFilePath, "utf8");
+
+    res.type("text/plain");
+    res.send(jsxCode);
+  } catch (error) {
+    console.error("Error reading blog JSX:", error);
+
+    res.status(500).send({
+      success: false,
+      message: "Failed to read JSX file",
+      error: error.message,
+    });
+  }
+});
+app.get("/blog/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({
+        success: false,
+        message: "Invalid blog ID",
+      });
+    }
+
+    const result = await blogCollection.findOne({
+      _id: new ObjectId(id),
+    });
+
+    if (!result) {
+      return res.status(404).send({
+        success: false,
+        message: "Blog not found",
+      });
+    }
+
+    res.send(result);
+  } catch (error) {
+    console.error("Error fetching blog:", error);
+
+    res.status(500).send({
+      success: false,
+      message: "Failed to fetch blog",
+      error: error.message,
+    });
+  }
+});
+  app.get('/blogs', async(req, res) =>{
+    const result = await blogCollection.find().toArray();
+    res.send(result);
+  });
 app.post('/push/subscribe', async (req, res) => {
   const { userId, subscription } = req.body;
   if (!userId || !subscription)
@@ -253,7 +648,112 @@ app.post('/push/subscribe', async (req, res) => {
   res.json({ success: true });
 });
 
+app.post('/clientlogin', async (req, res) => {
+  const { remail, rpass } = req.body;
 
+  if (!remail || !rpass) {
+    return res.status(400).json({ success: false, message: 'Email and password are required' });
+  }
+
+  try {
+    const user = await clientCollection.findOne({ remail });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    if (user.rpass !== rpass) return res.status(401).json({ success: false, message: 'Invalid password' });
+
+    // ── stamp lastActive on login ──
+    await clientCollection.updateOne(
+      { _id: user._id },
+      { $set: { lastActive: new Date() } }
+    );
+
+    const token = jwt.sign(
+      {
+        userId:  user._id,
+        role:    user.role,
+        email:   user.remail,
+        rname:   user.rname,
+        rppic:   user.rppic,
+        country: user.country,
+      },
+      JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      token,
+      user: {
+        id:      user._id,
+        role:    user.role,
+        remail:  user.remail,
+        rname:   user.rname,
+        rppic:   user.rppic,
+        country: user.country,
+      },
+    });
+  } catch (err) {
+    console.error('Login error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error.' });
+  }
+});
+
+app.post('/employeelogin', async (req, res) => {
+  const { remail, rpass } = req.body;
+
+  if (!remail || !rpass)
+    return res.status(400).json({ success: false, message: 'Email and password are required' });
+
+  try {
+    const user = await employeeCollection.findOne({ remail });
+
+    if (!user)
+      return res.status(404).json({ success: false, message: 'User not found' });
+
+    if (user.rpass !== rpass)
+      return res.status(401).json({ success: false, message: 'Wrong password' });
+
+    // ── stamp lastActive on login ──
+    await employeeCollection.updateOne(
+      { _id: user._id },
+      { $set: { lastActive: new Date() } }
+    );
+
+    const token = jwt.sign(
+      {
+        userId:  user._id,
+        role:    user.role,
+        email:   user.remail,
+        rname:   user.rname,
+        rppic:   user.rppic,
+        rdep:    user.rdep,
+        rsubdep: user.rsubdep,
+        esprts:  user.esprts,
+      },
+      JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      token,
+      user: {
+        id:      user._id,
+        role:    user.role,
+        remail:  user.remail,
+        rname:   user.rname,
+        rppic:   user.rppic,
+        rdep:    user.rdep,
+        rsubdep: user.rsubdep,
+        esprts:  user.esprts,
+      },
+    });
+  } catch (err) {
+    console.error('Employee login error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error.' });
+  }
+});
 
 app.post("/send-email", async (req, res) => {
   const { from, to, cc, bcc, subject, body, senderName } = req.body;
@@ -442,7 +942,204 @@ app.delete("/emails/sent/:id", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+const getUserCollectionByType = (userType) => {
+  if (userType === "employee") return employeeCollection;
+  return clientCollection;
+};
 
+app.post("/forgot-password/send-otp", async (req, res) => {
+  try {
+    const { remail, userType } = req.body;
+
+    if (!remail || !userType) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and user type are required.",
+      });
+    }
+
+    const userCollection = getUserCollectionByType(userType);
+
+    const user = await userCollection.findOne({ remail });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "No account found with this email.",
+      });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await passwordOtpCollection.deleteMany({
+      remail,
+      userType,
+      purpose: "reset-password",
+    });
+
+    await passwordOtpCollection.insertOne({
+      remail,
+      userType,
+      otp,
+      purpose: "reset-password",
+      verified: false,
+      expiresAt,
+      createdAt: new Date(),
+    });
+
+    const fromEmail = "support@cloudcompany.cc";
+    const selectedTransporter = transporters[fromEmail];
+
+    await selectedTransporter.sendMail({
+      from: `"Cloud Company" <${fromEmail}>`,
+      to: remail,
+      subject: "Password Reset OTP - Cloud Company",
+      text: `Your password reset OTP is ${otp}. It will expire in 10 minutes.`,
+      html: `
+        <div style="font-family:Arial,sans-serif;padding:20px;">
+          <h2>Password Reset Request</h2>
+          <p>Your OTP is:</p>
+          <h1 style="letter-spacing:4px;color:#2563eb;">${otp}</h1>
+          <p>This OTP will expire in 10 minutes.</p>
+          <p>If you did not request this, please ignore this email.</p>
+        </div>
+      `,
+    });
+
+    res.json({
+      success: true,
+      message: "OTP sent to your email.",
+    });
+  } catch (error) {
+    console.error("Forgot password OTP error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to send OTP.",
+      error: error.message,
+    });
+  }
+});
+
+app.post("/forgot-password/verify-otp", async (req, res) => {
+  try {
+    const { remail, userType, otp } = req.body;
+
+    if (!remail || !userType || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: "Email, user type and OTP are required.",
+      });
+    }
+
+    const otpDoc = await passwordOtpCollection.findOne(
+      {
+        remail,
+        userType,
+        otp,
+        purpose: "reset-password",
+        expiresAt: { $gt: new Date() },
+      },
+      {
+        sort: { createdAt: -1 },
+      }
+    );
+
+    if (!otpDoc) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired OTP.",
+      });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString("hex");
+
+    await passwordOtpCollection.updateOne(
+      { _id: otpDoc._id },
+      {
+        $set: {
+          verified: true,
+          resetToken,
+          resetTokenExpiresAt: new Date(Date.now() + 15 * 60 * 1000),
+        },
+      }
+    );
+
+    res.json({
+      success: true,
+      message: "OTP verified successfully.",
+      resetToken,
+    });
+  } catch (error) {
+    console.error("OTP verification error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to verify OTP.",
+      error: error.message,
+    });
+  }
+});
+
+app.post("/forgot-password/reset-password", async (req, res) => {
+  try {
+    const { remail, userType, resetToken, newPassword } = req.body;
+
+    if (!remail || !userType || !resetToken || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required.",
+      });
+    }
+
+    const otpDoc = await passwordOtpCollection.findOne({
+      remail,
+      userType,
+      resetToken,
+      verified: true,
+      purpose: "reset-password",
+      resetTokenExpiresAt: { $gt: new Date() },
+    });
+
+    if (!otpDoc) {
+      return res.status(400).json({
+        success: false,
+        message: "Reset session expired. Please request OTP again.",
+      });
+    }
+
+    const userCollection = getUserCollectionByType(userType);
+
+    const result = await userCollection.updateOne(
+      { remail },
+      {
+        $set: {
+          rpass: newPassword,
+          passwordUpdatedAt: new Date(),
+        },
+      }
+    );
+
+    await passwordOtpCollection.deleteMany({
+      remail,
+      userType,
+      purpose: "reset-password",
+    });
+
+    res.json({
+      success: true,
+      message: "Password reset successfully.",
+      modifiedCount: result.modifiedCount,
+    });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to reset password.",
+      error: error.message,
+    });
+  }
+});
 app.get('/robots.txt', (req, res) => {
   res.type('text/plain');
   res.send(`User-agent: *
@@ -633,6 +1330,24 @@ app.post("/applyjob", uploadCv.single("cv"), async (req, res) => {
     });
   }
 });
+app.get("/jobapplications", async (req, res) => {
+  try {
+    const applications = await JobApplyCollection
+      .find()
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.status(200).json(applications);
+  } catch (error) {
+    console.error("Error fetching applications:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch applications.",
+      error: error.message,
+    });
+  }
+});
+   //                                                             ====     Portfolio operations    =====
 app.get('/getportfolio/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -842,14 +1557,13 @@ app.patch("/portfolio/:id/status", async (req, res) => {
     });
   }
 });
-
 app.delete('/delportfolio/:id', async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       console.log('delete: ');
       const result = await portfolioCollection.deleteOne(query);
       res.send(result);
-  });
+});
 app.get("/portfolio/type/:portfolioType", async (req, res) => {
   try {
     const { portfolioType } = req.params;
@@ -1147,30 +1861,63 @@ app.get('/admindashboard', async (req, res) => {
 });
 app.get('/stats', async (req, res) => {
   try {
-      const soldPackage = (await PsoldCollection.find().toArray()).length;
+    const soldPackage = (await PsoldCollection.find().toArray()).length;
     const reviews = (await CfeedbackCollection.find().toArray()).length;
     const clients = (await clientCollection.find().toArray()).length;
 
-const visitors = await visitorCollection.find().toArray();
-const views = visitors.reduce((sum, item) => sum + Number(item.count || 0), 0);
- 
+    const visitors = await visitorCollection.find().toArray();
 
+    const views = visitors.reduce(
+      (sum, item) => sum + Number(item.count || 0),
+      0
+    );
 
-    const result = {
-      packages: soldPackage,
-      reviews: reviews,
-      clients: clients,
-      views: views,
+    // Change this date to the day you want fake increment to start
+    const startDate = new Date('2026-05-02');
 
+    const today = new Date();
 
-    };
-    res.send(result);
+    // Remove time part for accurate day difference
+    const startOnly = new Date(
+      startDate.getFullYear(),
+      startDate.getMonth(),
+      startDate.getDate()
+    );
+
+    const todayOnly = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate()
+    );
+
+    const diffTime = todayOnly - startOnly;
+
+    const daysPassed = Math.max(
+      0,
+      Math.floor(diffTime / (1000 * 60 * 60 * 24))
+    );
+
+    // Fake increments
+    const packageIncrement = daysPassed * 1;
+    const reviewIncrement = Math.floor(daysPassed / 2) * 1;
+    const clientIncrement = Math.floor(daysPassed / 3) * 2;
+
+    res.send({
+      packages: soldPackage + packageIncrement,
+      reviews: reviews + reviewIncrement,
+      clients: clients + clientIncrement,
+      views,
+    });
+
   } catch (error) {
-    console.error(error);
-    res.status(500).send({ message: 'Error fetching data' });
+    console.error("Error fetching stats:", error);
+
+    res.status(500).send({
+      message: "Error fetching stats",
+      error: error.message,
+    });
   }
 });
-
 app.post('/vcount', async (req, res) => {
   try {
       const today = moment().format('YYYY-MM-DD'); 
@@ -1224,7 +1971,6 @@ app.get('/home/critical', async (req, res) => {
     res.status(500).send({ message: 'Error' });
   }
 });
-
 app.get('/home/secondary', async (req, res) => {
   try {
     const [
@@ -1253,7 +1999,6 @@ app.get('/home/secondary', async (req, res) => {
   }
 });
 //                                                                          CHAT CHAT CHAT CHAT CHAT
-
 function broadcastMessage(identifier, message) {
     if (clients.has(identifier)) {
         clients.get(identifier).forEach(ws => {
@@ -1356,7 +2101,6 @@ wss.on('connection', (ws, req) => {
     }
   });
 });
-
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const orderId = req.body.orderId || 'unknown';
@@ -1372,15 +2116,12 @@ const storage = multer.diskStorage({
         cb(null, uniqueName);
     },
 });
-
 const uploadchatfile = multer({
     storage,
     limits: { fileSize: 20 * 1024 * 1024 },
 });
-
 const getFileUrl = (orderId, filename) =>
     `/uploads/chat/${orderId}/${filename}`;
-
 const estorage = multer.diskStorage({
     destination: (req, file, cb) => {
         const dir = path.join(__dirname, 'uploads', 'empchat');
@@ -1395,7 +2136,7 @@ const uploadechatfile = multer({
     storage: estorage, 
     limits: { fileSize: 20 * 1024 * 1024 },
 });
- 
+
 const geteFileUrl = (taskId, filename) => `/uploads/empchat/${filename}`;
 
 app.post('/addclichat/files', uploadchatfile.array('files', 10), async (req, res) => {
@@ -2958,7 +3699,6 @@ app.post('/employeelogin', async (req, res) => {
   }
 });
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 //  2. EMPLOYEE PING — called every 60s from the employee's profile page
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2983,7 +3723,6 @@ app.post('/employee-ping', async (req, res) => {
     return res.status(401).json({ success: false });
   }
 });
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  3. COMBINED stampActivity middleware
@@ -3082,7 +3821,6 @@ app.post('/clientlogin', async (req, res) => {
     return res.status(500).json({ success: false, message: 'Internal server error.' });
   }
 });
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  2. MIDDLEWARE — stamp lastActive on every authenticated request
@@ -3636,10 +4374,63 @@ app.post('/clientfeedbacks', async (req, res) => {
     res.status(500).json({ message: 'Internal server error' });
   }
 });
-app.get('/clientfeedbacks', async(req, res) =>{
-const result = await CfeedbackCollection.find().toArray();
-res.send(result);
-})
+
+app.get('/clientfeedbacks', async (req, res) => {
+  try {
+    const feedbacks = await CfeedbackCollection
+      .find()
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    const packageIds = [
+      ...new Set(
+        feedbacks
+          .map((feedback) => feedback.packageId)
+          .filter((id) => id && ObjectId.isValid(id))
+      ),
+    ];
+
+    const packages = await packageCollection
+      .find({
+        _id: {
+          $in: packageIds.map((id) => new ObjectId(id)),
+        },
+      })
+      .project({
+        packageName: 1,
+        packageCover: 1,
+        category: 1,
+      })
+      .toArray();
+
+    const packageMap = {};
+
+    packages.forEach((pkg) => {
+      packageMap[pkg._id.toString()] = pkg;
+    });
+
+    const result = feedbacks.map((feedback) => {
+      const pkg = packageMap[feedback.packageId];
+
+      return {
+        ...feedback,
+        packageName: pkg?.packageName || "Unknown Package",
+        packageCover: pkg?.packageCover || "",
+        packageCategory: pkg?.category || "",
+      };
+    });
+
+    res.send(result);
+  } catch (error) {
+    console.error("Error fetching client feedbacks:", error);
+
+    res.status(500).send({
+      success: false,
+      message: "Error fetching client feedbacks",
+      error: error.message,
+    });
+  }
+});
 app.post('/clientfeedbacks/status/:reviewId', async (req, res) => {
   try {
     const reviewId = req.params.reviewId;
