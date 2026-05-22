@@ -321,30 +321,194 @@ function isUserOnline(roomId, userId) {
   );
 }
 
-async function notifyIfOffline(roomId, recipientId, message) {
-  if (isUserOnline(roomId, recipientId)) return; // already online, skip
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
 
-  const record = await pushSubscriptionCollection.findOne({ userId: recipientId });
-  if (!record) return; // no subscription saved
+function getMessagePreview(message) {
+  if (message.attachments?.length > 0) return "📎 Sent an attachment";
+  if (message.text?.startsWith("📎")) return "📎 Sent an attachment";
+  return message.text || "New message";
+}
 
-  const senderName = message.bName || message.empName || 'Someone';
-  const payload = JSON.stringify({
-    title: `New message from ${senderName}`,
-    body: message.text?.startsWith('📎') ? '📎 Sent an attachment' : message.text,
-    url: `/chat/${roomId}`
-  });
+async function getRecipientInfo(recipientType, recipientId, roomId) {
+  if (recipientType === "employee") {
+    if (!ObjectId.isValid(recipientId)) return null;
 
-  try {
-    await webpush.sendNotification(record.subscription, payload);
-  } catch (err) {
-    // Subscription expired or invalid — clean it up
-    if (err.statusCode === 410 || err.statusCode === 404) {
-      await pushSubscriptionCollection.deleteOne({ userId: recipientId });
-    } else {
-      console.error('Push error:', err);
+    const employee = await employeeCollection.findOne({
+      _id: new ObjectId(recipientId),
+    });
+
+    if (!employee?.remail) return null;
+
+    return {
+      name: employee.rname || "Employee",
+      email: employee.remail,
+    };
+  }
+
+  if (recipientType === "client") {
+    let client = null;
+
+    if (ObjectId.isValid(recipientId)) {
+      client = await clientCollection.findOne({
+        _id: new ObjectId(recipientId),
+      });
+    }
+
+    if (client?.remail) {
+      return {
+        name: client.rname || "Client",
+        email: client.remail,
+      };
+    }
+
+    if (ObjectId.isValid(roomId)) {
+      const regularOrder = await PsoldCollection.findOne({
+        _id: new ObjectId(roomId),
+      });
+
+      if (regularOrder?.email) {
+        return {
+          name: regularOrder.buyername || "Client",
+          email: regularOrder.email,
+        };
+      }
+
+      const customOrder = await customPackageRequestCollection.findOne({
+        _id: new ObjectId(roomId),
+      });
+
+      if (customOrder?.email) {
+        return {
+          name: customOrder.buyername || "Client",
+          email: customOrder.email,
+        };
+      }
     }
   }
+
+  return null;
 }
+
+async function notifyIfOffline(roomId, recipientId, message, recipientType = "client") {
+  try {
+    // Only manager messages should send email
+    if (message.sender !== "manager") return;
+
+    // If recipient is online in this room, skip email
+    if (isUserOnline(roomId, recipientId)) {
+      console.log("Recipient is online, offline email skipped:", recipientId);
+      return;
+    }
+
+    const preview = getMessagePreview(message);
+
+    // Duplicate protection
+    const existingEmail = await emailLogCollection.findOne({
+      type: "sent",
+      chatRoomId: roomId,
+      recipientId,
+      recipientType,
+      messageTime: message.time,
+      messagePreview: preview,
+    });
+
+    if (existingEmail) {
+      console.log("Duplicate offline email skipped:", recipientId);
+      return;
+    }
+
+    const recipient = await getRecipientInfo(recipientType, recipientId, roomId);
+
+    if (!recipient?.email) {
+      console.log("Recipient email not found:", {
+        recipientType,
+        recipientId,
+        roomId,
+      });
+      return;
+    }
+
+    const safeName = escapeHtml(recipient.name);
+    const safePreview = escapeHtml(preview);
+
+    const subject = "New message from Cloud Company";
+
+    const htmlBody = `
+      <div style="font-family: Arial, sans-serif; max-width: 620px; margin: auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 10px;">
+        <h2 style="color:#2563eb; margin-top:0;">New Message Received</h2>
+
+        <p>Hello <strong>${safeName}</strong>,</p>
+
+        <p>You received a new message from Cloud Company while you were offline.</p>
+
+        <div style="background:#f8fafc; padding:16px; border-radius:8px; margin:20px 0;">
+          <p style="margin:0 0 8px;"><strong>Message:</strong></p>
+          <p style="margin:0; color:#334155;">${safePreview}</p>
+        </div>
+
+        <p>Please login to your dashboard to reply.</p>
+
+        <br/>
+        <p style="color:#64748b; font-size:13px;">
+          Best regards,<br/>
+          <strong>Cloud Company Team</strong><br/>
+          cloudcompany.cc
+        </p>
+      </div>
+    `;
+
+    await infoTransporter.sendMail({
+      from: '"Cloud Company" <info@cloudcompany.cc>',
+      to: recipient.email,
+      subject,
+      text: preview,
+      html: htmlBody,
+    });
+
+    await emailLogCollection.insertOne({
+      type: "sent",
+      from: "info@cloudcompany.cc",
+      senderName: "Cloud Company",
+      to: [recipient.email],
+      cc: [],
+      bcc: [],
+      subject,
+      body: htmlBody,
+      chatRoomId: roomId,
+      recipientId,
+      recipientType,
+      messagePreview: preview,
+      messageTime: message.time,
+      sentAt: new Date(),
+      read: true,
+    });
+
+    console.log("Offline email sent to:", recipient.email);
+
+  } catch (err) {
+    console.error("Offline email notify error:", err.message);
+  }
+}
+
+function getMessagePreview(message) {
+  if (message.attachments?.length > 0) {
+    return "📎 Sent an attachment";
+  }
+
+  if (message.text?.startsWith("📎")) {
+    return "📎 Sent an attachment";
+  }
+
+  return message.text || "New message";
+}
+
 const createSlug = (text) => {
   return text
     .toString()
@@ -1386,6 +1550,7 @@ app.post("/portfolio", uploadPortfolioImage.single("image"), async (req, res) =>
         link,
         shortDetails,
         metaData,
+        status,
         portfolioType,
         userId,
       } = req.body;
@@ -1406,7 +1571,7 @@ app.post("/portfolio", uploadPortfolioImage.single("image"), async (req, res) =>
         metaData: metaData || null,
         portfolioType,
         image: req.file.path,
-        status: "hidden",
+        status,
         userId: userId || null,
         createdAt: new Date(),
       };
@@ -1486,7 +1651,7 @@ app.patch("/portfolio/:id/status", async (req, res) => {
     const { id } = req.params;
     const { status, note } = req.body;
 
-    // Validate MongoDB ObjectId
+   
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -1501,13 +1666,7 @@ app.patch("/portfolio/:id/status", async (req, res) => {
       });
     }
 
-    const validStatuses = ["hidden", "visible", "archived"];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
-      });
-    }
+  
 
     const updateData = {
       status,
@@ -1518,7 +1677,7 @@ app.patch("/portfolio/:id/status", async (req, res) => {
     if (note !== undefined && note !== null && String(note).trim() !== "") {
       updateData.statusNote = String(note).trim();
     } else {
-      // If no note provided, explicitly unset the field
+  
       updateData.statusNote = "";
     }
 
@@ -2056,7 +2215,7 @@ wss.on('connection', (ws, req) => {
           await employeechatCollection.insertOne(newMessage);
           broadcastMessage(msg.taskId, newMessage);
           // Notify the employee if offline (sender is manager, recipient is empId)
-          await notifyIfOffline(msg.taskId, msg.empId, newMessage);
+         await notifyIfOffline(msg.taskId, msg.empId, newMessage, "employee");
         }
 
       } else if (msg.orderId) {
@@ -2071,8 +2230,7 @@ wss.on('connection', (ws, req) => {
           await clientchatCollection.insertOne(newMessage);
           broadcastMessage(msg.orderId, newMessage);
           // Notify the client if offline
-          await notifyIfOffline(msg.orderId, msg.bId, newMessage);
-        }
+            await notifyIfOffline(msg.orderId, msg.bId, newMessage, "client");        }
 
       } else if (msg.supportId) {
         newMessage = {
@@ -2086,8 +2244,7 @@ wss.on('connection', (ws, req) => {
           await schatCollection.insertOne(newMessage);
           broadcastMessage(msg.supportId, newMessage);
           // Notify the client if offline
-          await notifyIfOffline(msg.supportId, msg.bId, newMessage);
-        }
+await notifyIfOffline(msg.supportId, msg.bId, newMessage, "client");        }
       }
     } catch (err) {
       console.error('WS message error:', err);
@@ -2175,11 +2332,13 @@ app.post('/addclichat/files', uploadchatfile.array('files', 10), async (req, res
 
         // Persist to MongoDB
         await clientchatCollection.insertOne(newMessage);
+setTimeout(async () => {
+  broadcastMessage(orderId, newMessage);
 
-        // Broadcast to all connected WebSocket clients for this order
-        setTimeout(() => {
-            broadcastMessage(orderId, newMessage);
-        }, 0);
+  if (newMessage.sender === "manager") {
+    await notifyIfOffline(orderId, bId, newMessage, "client");
+  }
+}, 0);
 
         res.status(201).json(newMessage);
     } catch (error) {
@@ -2219,9 +2378,13 @@ app.post('/addempchat/files', uploadechatfile.array('files', 10), async (req, re
  
         await employeechatCollection.insertOne(newMessage);
  
-        setTimeout(() => {
-            broadcastMessage(taskId, newMessage); // ← was broadcastMessage(orderId, ...) — orderId is undefined here
-        }, 0);
+      setTimeout(async () => {
+  broadcastMessage(taskId, newMessage);
+
+  if (newMessage.sender === "manager") {
+    await notifyIfOffline(taskId, empId, newMessage, "employee");
+  }
+}, 0);
  
         res.status(201).json(newMessage);
     } catch (error) {
@@ -2266,9 +2429,12 @@ app.post('/addempchat', async (req, res) => {
  
         res.status(201).json(newMessage);
  
-       setTimeout(async () => {
+     setTimeout(async () => {
   broadcastMessage(taskId, newMessage);
-  await notifyIfOffline(taskId, empId, newMessage); 
+
+  if (newMessage.sender === "manager") {
+    await notifyIfOffline(taskId, empId, newMessage, "employee");
+  }
 }, 0);
     } catch (error) {
         console.error('Error adding employee message:', error);
@@ -2309,9 +2475,12 @@ app.post('/addclichat', async (req, res) => {
 
         res.status(201).json(newMessage);
 
-      setTimeout(async () => {
+    setTimeout(async () => {
   broadcastMessage(orderId, newMessage);
-  await notifyIfOffline(orderId, bId, newMessage); // notify the client
+
+  if (newMessage.sender === "manager") {
+    await notifyIfOffline(orderId, bId, newMessage, "client");
+  }
 }, 0);
 
         
@@ -2676,7 +2845,6 @@ app.post('/orderpaymentstatus/:orderid', async (req, res) => {
       console.error(" Email error:", emailErr.message);
     }
 
-    // ✅ Task flow — থাকলে create করো, না থাকলে skip
     const { packageId, buyerid } = order;
     const template = await taskFlowCollection.findOne({ packageId });
 
@@ -4128,10 +4296,200 @@ app.get('/comtasks', async (req, res) => {
   }
 });
 app.post('/addtask', async (req, res) => {
-const newPost = req.body;
-console.log(newPost);
-const result = await tasksCollection.insertOne(newPost);
-res.send(result);
+  try {
+    const newPost = req.body;
+
+    const result = await tasksCollection.insertOne(newPost);
+    const taskId = result.insertedId.toString();
+
+    const escapeRegex = (value) =>
+      String(value || "")
+        .trim()
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    const matchedEmployees = await employeeCollection.find({
+      rdep: {
+        $regex: `^\\s*${escapeRegex(newPost.rdep)}\\s*$`,
+        $options: "i",
+      },
+      rsubdep: {
+        $regex: `^\\s*${escapeRegex(newPost.rsubdep)}\\s*$`,
+        $options: "i",
+      },
+      remail: { $exists: true, $ne: "" },
+    }).toArray();
+
+    const employeeEmails = [
+      ...new Set(matchedEmployees.map(emp => emp.remail).filter(Boolean)),
+    ];
+
+    console.log("Task rdep:", newPost.rdep);
+    console.log("Task rsubdep:", newPost.rsubdep);
+    console.log("Matched employees:", matchedEmployees.map(emp => ({
+      name: emp.rname,
+      email: emp.remail,
+      rdep: emp.rdep,
+      rsubdep: emp.rsubdep,
+    })));
+
+    let emailSent = false;
+    let emailError = null;
+
+    if (employeeEmails.length > 0) {
+      const subject = `New Task Available - ${newPost.tname}`;
+
+      const htmlBody = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 10px;">
+          <h2 style="color:#2563eb;">New Task Available</h2>
+
+          <p>Hello Team,</p>
+          <p>A new task is available for your department.</p>
+
+          <div style="background:#f8fafc; padding:16px; border-radius:8px; margin:20px 0;">
+            <p><strong>Task Name:</strong> ${newPost.tname}</p>
+            <p><strong>Description:</strong> ${newPost.tdesc || "N/A"}</p>
+            <p><strong>Department:</strong> ${newPost.rdep}</p>
+            <p><strong>Sub Department:</strong> ${newPost.rsubdep}</p>
+            <p><strong>Expertise:</strong> ${newPost.esprts || "N/A"}</p>
+            <p><strong>Estimated Time:</strong> ${newPost.ttime || "N/A"}</p>
+            <p><strong>Credit:</strong> ${newPost.tcc || "N/A"}</p>
+            <p><strong>Task ID:</strong> ${taskId}</p>
+          </div>
+
+          <p>Please login to your employee dashboard and check the task.</p>
+
+          <br/>
+          <p style="color:#64748b; font-size:13px;">
+            Best regards,<br/>
+            <strong>Cloud Company Team</strong><br/>
+            cloudcompany.cc
+          </p>
+        </div>
+      `;
+
+      try {
+        await infoTransporter.sendMail({
+          from: '"Cloud Company" <info@cloudcompany.cc>',
+          bcc: employeeEmails.join(", "),
+          subject,
+          text: htmlBody.replace(/<[^>]*>/g, ""),
+          html: htmlBody,
+        });
+
+        emailSent = true;
+
+        await emailLogCollection.insertOne({
+          type: "sent",
+          from: "info@cloudcompany.cc",
+          senderName: "Cloud Company",
+          to: [],
+          cc: [],
+          bcc: employeeEmails,
+          subject,
+          body: htmlBody,
+          taskId,
+          sentAt: new Date(),
+          read: true,
+        });
+
+      } catch (err) {
+        console.error("Task email send error:", err);
+        emailError = err.message;
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Task added successfully",
+      insertedId: result.insertedId,
+      matchedEmployees: matchedEmployees.length,
+      emailedEmployees: employeeEmails.length,
+      emailSent,
+      emailError,
+    });
+
+  } catch (error) {
+    console.error("Error adding task:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to add task",
+      error: error.message,
+    });
+  }
+});
+// Fetch only the tasks this employee can do
+app.get("/employee/tasks/can-do/:employeeId", async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+
+    if (!ObjectId.isValid(employeeId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid employee ID",
+      });
+    }
+
+    const employee = await employeeCollection.findOne({
+      _id: new ObjectId(employeeId),
+    });
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: "Employee not found",
+      });
+    }
+
+    const escapeRegex = (value) =>
+      String(value || "")
+        .trim()
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    const exactInsensitive = (value) => ({
+      $regex: `^\\s*${escapeRegex(value)}\\s*$`,
+      $options: "i",
+    });
+
+    const tasks = await tasksCollection
+      .find({
+        rdep: exactInsensitive(employee.rdep),
+        rsubdep: exactInsensitive(employee.rsubdep),
+
+        // show pending tasks this employee can accept
+        // and also accepted tasks already assigned to this employee
+        $or: [
+          { tstatus: "pending" },
+          {
+            tstatus: "Accepted",
+            taptr: employeeId,
+          },
+        ],
+      })
+      .sort({ tmt: -1 })
+      .toArray();
+
+    res.status(200).json({
+      success: true,
+      employee: {
+        id: employee._id,
+        rname: employee.rname,
+        remail: employee.remail,
+        rdep: employee.rdep,
+        rsubdep: employee.rsubdep,
+        esprts: employee.esprts,
+      },
+      count: tasks.length,
+      tasks,
+    });
+
+  } catch (error) {
+    console.error("Error fetching employee tasks:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch employee tasks",
+      error: error.message,
+    });
+  }
 });
 app.delete('/deltask/:id', async (req, res) => {
 const id = req.params.id;
