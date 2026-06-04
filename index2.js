@@ -21,8 +21,8 @@ const nodemailer = require("nodemailer");
 const router   = express.Router();
 const Imap = require('imap');
 const { simpleParser } = require('mailparser');
- const collection = 'Cloudcompany';
-//const collection = 'Cloudcompanydev';
+ // const collection = 'Cloudcompany';
+const collection = 'Cloudcompanydev';
 const webpush = require('web-push');
 
 webpush.setVapidDetails(
@@ -4267,10 +4267,14 @@ app.put("/updateclient/:id", async (req, res) => {
   res.send(result);
   });
 //                                                                       Tasks CRUD operations 
-app.get('/alltasks', async(req, res) =>{
-const result = await tasksCollection.find().toArray();
-res.send(result);
-})
+app.get('/alltasks', async (req, res) => {
+  const result = await tasksCollection
+    .find()
+    .sort({ tmt: -1 }) // newest first
+    .toArray();
+
+  res.send(result);
+});
 app.get('/tasks', async (req, res) => {
 try {
   const result = await tasksCollection.find({ tstatus: { $ne: 'Done' } }).toArray();
@@ -4463,6 +4467,10 @@ app.get("/employee/tasks/can-do/:employeeId", async (req, res) => {
             tstatus: "Accepted",
             taptr: employeeId,
           },
+           {
+            tstatus: "Completed",
+            taptr: employeeId,
+          },
         ],
       })
       .sort({ tmt: -1 })
@@ -4499,13 +4507,7 @@ const result = await tasksCollection.deleteOne(query);
 res.send(result);
 });
 const formatDateTime = (date) => {
-const year = date.getFullYear();
-const month = String(date.getMonth() + 1).padStart(2, '0'); // Months are 0-based
-const day = String(date.getDate()).padStart(2, '0');
-const hours = String(date.getHours()).padStart(2, '0');
-const minutes = String(date.getMinutes()).padStart(2, '0');
-
-return `${year}-${month}-${day}T${hours}:${minutes}:00`;
+  return date.toISOString();
 };
 app.put('/comptask/:id', async (req, res) => {
   const id = req.params.id;
