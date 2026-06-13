@@ -4471,6 +4471,10 @@ app.get("/employee/tasks/can-do/:employeeId", async (req, res) => {
             tstatus: "Completed",
             taptr: employeeId,
           },
+           {
+            tstatus: "VerifyTask",
+            taptr: employeeId,
+          },
         ],
       })
       .sort({ tmt: -1 })
@@ -4509,64 +4513,145 @@ res.send(result);
 const formatDateTime = (date) => {
   return date.toISOString();
 };
+// ── 1. Employee marks task done → "VerifyTask" ──
 app.put('/comptask/:id', async (req, res) => {
   const id = req.params.id;
-
-  if (!ObjectId.isValid(id)) {
-    return res.status(400).json({ message: "Invalid task ID format" });
-  }
+  if (!ObjectId.isValid(id)) return res.status(400).json({ message: "Invalid task ID" });
 
   try {
-    // 1️⃣ Complete current task
-    const filter = { _id: new ObjectId(id), tstatus: 'Accepted' };
-    const update = {
-      $set: {
-        tstatus: 'Completed',
-        completedAt: formatDateTime(new Date()),
-      }
-    };
-
-    const result = await tasksCollection.updateOne(filter, update);
+    const result = await tasksCollection.updateOne(
+      { _id: new ObjectId(id), tstatus: 'Accepted' },
+      { $set: { tstatus: 'VerifyTask', submittedAt: formatDateTime(new Date()) } }
+    );
 
     if (result.matchedCount === 0) {
-      return res.status(404).json({
-        message: 'No task with status "Accepted" found for this ID'
-      });
+      return res.status(404).json({ message: 'Task not found or not in Accepted status' });
     }
 
-    // 2️⃣ Find the task that depends on this one
-    const nextTask = await tasksCollection.findOne({
-      tfid: id,                     // this task depends on the completed task
-      tstatus: "not activated"      // only activate if currently locked
-    });
+    return res.json({ message: "Task submitted for verification", result });
 
-    // No next task (this is the last task)
-    if (!nextTask) {
-      return res.json({
-        message: "Task completed. No dependent task found.",
-        result
-      });
-    }
+  } catch (error) {
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
 
-    // 3️⃣ Activate next task by setting it to PENDING
-    await tasksCollection.updateOne(
-      { _id: nextTask._id },
-      {
-        $set: {
-          tstatus: "pending",
-          activatedAt: formatDateTime(new Date())
-        }
+app.put('/verifytask/:id', async (req, res) => {
+  const id = req.params.id;
+  const { action } = req.body; // "approve" or "reject"
+
+  if (!ObjectId.isValid(id)) return res.status(400).json({ message: "Invalid task ID" });
+  if (!["approve", "reject"].includes(action)) return res.status(400).json({ message: "Invalid action" });
+
+  try {
+    const newStatus = action === "approve" ? "Completed" : "Accepted";
+
+    const result = await tasksCollection.updateOne(
+      { _id: new ObjectId(id), tstatus: "VerifyTask" },
+      { $set: { 
+          tstatus: newStatus, 
+          verifiedAt: formatDateTime(new Date()),
+          verifyResult: action 
+        } 
       }
     );
 
-    return res.json({
-      message: "Task completed and next dependent task activated",
-      completedTaskId: id,
-      nextActivatedTaskId: nextTask._id
-    });
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ message: "Task not found or not in VerifyTask status" });
+    }
+
+    // Only activate next task if approved
+    if (action === "approve") {
+      const nextTask = await tasksCollection.findOne({
+        tfid: id,
+        tstatus: "not activated"
+      });
+
+      if (nextTask) {
+        await tasksCollection.updateOne(
+          { _id: nextTask._id },
+          { $set: { tstatus: "pending", activatedAt: formatDateTime(new Date()) } }
+        );
+        return res.json({ message: "Task approved, completed, and next task activated", nextActivatedTaskId: nextTask._id });
+      }
+    }
+
+    return res.json({ message: action === "approve" ? "Task approved and completed" : "Task rejected and returned to Accepted", result });
 
   } catch (error) {
-    console.error('Error updating task:', error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// 1. Employee timer expires → mark timeranout
+app.put('/timeranout/:id', async (req, res) => {
+  const id = req.params.id;
+  if (!ObjectId.isValid(id)) return res.status(400).json({ message: "Invalid task ID" });
+
+  try {
+    const result = await tasksCollection.updateOne(
+      { _id: new ObjectId(id), tstatus: 'Accepted' },
+      { $set: { timeranout: true, timeranoutAt: formatDateTime(new Date()) } }
+    );
+    res.json({ message: "Time ran out marked", result });
+  } catch (error) {
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// 2. Admin extends time with reduced CC
+app.put('/extendtime/:id', async (req, res) => {
+  const id = req.params.id;
+  const { extraHours, reducedCC } = req.body;
+  if (!ObjectId.isValid(id)) return res.status(400).json({ message: "Invalid task ID" });
+
+  try {
+    const task = await tasksCollection.findOne({ _id: new ObjectId(id) });
+    if (!task) return res.status(404).json({ message: "Task not found" });
+
+    const newDeadline = new Date(
+      new Date(task.tat).getTime() + (Number(task.ttime) + Number(extraHours)) * 60 * 60 * 1000
+    );
+
+    const result = await tasksCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          ttime: Number(task.ttime) + Number(extraHours),
+          tcc: reducedCC,
+          timeranout: false,
+          extendedAt: formatDateTime(new Date()),
+          tstatus: 'Accepted',
+        }
+      }
+    );
+    res.json({ message: "Time extended and CC reduced", result });
+  } catch (error) {
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// 3. Admin reassigns task to someone else
+app.put('/reassigntask/:id', async (req, res) => {
+  const id = req.params.id;
+  const { newEmployeeId, newEmployeeName, newEmployeeDp } = req.body;
+  if (!ObjectId.isValid(id)) return res.status(400).json({ message: "Invalid task ID" });
+
+  try {
+    const result = await tasksCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          taptr: newEmployeeId,
+          apname: newEmployeeName,
+          apdp: newEmployeeDp,
+          tstatus: 'pending',
+          timeranout: false,
+          reassignedAt: formatDateTime(new Date()),
+        }
+      }
+    );
+    res.json({ message: "Task reassigned successfully", result });
+  } catch (error) {
     res.status(500).json({ message: 'Internal server error' });
   }
 });
