@@ -546,8 +546,8 @@ const createSlug = (text) => {
     });
   }
 });
-app.post(
-  "/addblog",
+
+app.post("/addblog",
   uploadBlog.fields([
     { name: "coverImage", maxCount: 1 },
     { name: "jsxFile", maxCount: 1 },
@@ -1447,6 +1447,7 @@ app.put('/updateorderpayment/:id', async (req, res) => {
   );
   res.json({ success: result.modifiedCount > 0 });
 });
+
 app.put('/updatecustomorderpayment/:id', async (req, res) => {
   const { paymentMethod, paymentNumber, referenceCode, transactionId, paymentStatus } = req.body;
   const result = await customPackageRequestCollection.updateOne(
@@ -1455,6 +1456,7 @@ app.put('/updatecustomorderpayment/:id', async (req, res) => {
   );
   res.json({ success: result.modifiedCount > 0 });
 });
+
 app.post("/applyjob", uploadCv.single("cv"), async (req, res) => {
   try {
     const { name, email, phone, jobTitle, jobid } = req.body;
@@ -1494,6 +1496,7 @@ app.post("/applyjob", uploadCv.single("cv"), async (req, res) => {
     });
   }
 });
+
 app.get("/jobapplications", async (req, res) => {
   try {
     const applications = await JobApplyCollection
@@ -2277,8 +2280,7 @@ const uploadchatfile = multer({
     storage,
     limits: { fileSize: 20 * 1024 * 1024 },
 });
-const getFileUrl = (orderId, filename) =>
-    `/uploads/chat/${orderId}/${filename}`;
+const getFileUrl = (orderId, filename) => `/uploads/chat/${orderId}/${filename}`;
 const estorage = multer.diskStorage({
     destination: (req, file, cb) => {
         const dir = path.join(__dirname, 'uploads', 'empchat');
@@ -2568,7 +2570,6 @@ app.get('/schat/:supportId', async (req, res) => {
     res.status(500).json({ message: 'Error fetching messages' });
   }
 });
-
 app.post("/schat/mark-read/:supportId", async (req, res) => {
   try {
     const { supportId } = req.params;
@@ -2625,7 +2626,6 @@ app.get("/admin/support", async (req, res) => {
   }
 });
 
-//                                                                          CHAT CHAT CHAT CHAT CHAT
 //                                                                          ORDER ORDER ORDER
 
 app.get('/orders', async (req, res) => {
@@ -3801,6 +3801,52 @@ app.post("/addemployee", async (req, res) => {
       .send({ success: false, message: "Failed to add employee" });
   }
 });
+app.patch("/employee/:id/ready", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isReady } = req.body;
+
+    // Validate the id
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({
+        success: false,
+        message: "Invalid employee id",
+      });
+    }
+
+    // Validate isReady is actually a boolean
+    if (typeof isReady !== "boolean") {
+      return res.status(400).send({
+        success: false,
+        message: "isReady must be true or false",
+      });
+    }
+
+    const result = await employeeCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { isReady } }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({
+        success: false,
+        message: "Employee not found",
+      });
+    }
+
+    res.status(200).send({
+      success: true,
+      message: "isReady updated successfully",
+      isReady,
+    });
+  } catch (error) {
+    console.error("Error updating isReady:", error);
+    res.status(500).send({
+      success: false,
+      message: "Failed to update isReady",
+    });
+  }
+});
 app.delete('/delemployee/:id', async (req, res) => {
   const id = req.params.id;
   const query = { _id: new ObjectId(id) };
@@ -3867,9 +3913,8 @@ app.post('/employeelogin', async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  2. EMPLOYEE PING — called every 60s from the employee's profile page
-// ─────────────────────────────────────────────────────────────────────────────
+//                                              EMPLOYEE PING — called every 60s from the employee's profile page
+
 app.post('/employee-ping', async (req, res) => {
   try {
     const authHeader = req.headers['authorization'];
@@ -3892,12 +3937,7 @@ app.post('/employee-ping', async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  3. COMBINED stampActivity middleware
-//     Updates lastActive for BOTH clients and employees on any authenticated
-//     request. Replace your existing stampActivity with this one.
-//     Register with: app.use(stampActivity)  ← before all routes
-// ─────────────────────────────────────────────────────────────────────────────
+
 const stampActivity = async (req, res, next) => {
   try {
     const authHeader = req.headers['authorization'];
@@ -3924,22 +3964,8 @@ const stampActivity = async (req, res, next) => {
 app.use(stampActivity);
 
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  4. /employees — make sure lastActive is included (it will be automatically
-//     since you use .find().toArray() with no projection that excludes it)
-//     No change needed if your existing /employees route is:
-//
-//     app.get('/employees', async (req, res) => {
-//       const result = await employeeCollection.find().toArray();
-//       res.json(result);
-//     });
-//
-//     If you have a projection, just add lastActive: 1 to it.
-// ─────────────────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  1. UPDATE LOGIN — save lastActive on login
-// ─────────────────────────────────────────────────────────────────────────────
+//                                                     UPDATE LOGIN — save lastActive on login
 app.post('/clientlogin', async (req, res) => {
   const { remail, rpass } = req.body;
 
@@ -3990,21 +4016,8 @@ app.post('/clientlogin', async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  2. MIDDLEWARE — stamp lastActive on every authenticated request
-//     Place this BEFORE your protected routes.
-//     It reads the JWT, finds the user, updates lastActive silently.
-// ─────────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
-//  stampActivity middleware
-//  Reads the JWT from Authorization header, updates lastActive on every 
-//  authenticated request. Register with app.use(stampActivity) BEFORE routes.
-// ─────────────────────────────────────────────────────────────────────────────
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  /client-ping  — lightweight endpoint, called every 60s from ClientProfile
-// ─────────────────────────────────────────────────────────────────────────────
+//                                         /client-ping  — lightweight endpoint, called every 60s from ClientProfile
 app.post("/client-ping", async (req, res) => {
   try {
     const authHeader = req.headers["authorization"];
@@ -4321,6 +4334,8 @@ app.post('/addtask', async (req, res) => {
         $options: "i",
       },
       remail: { $exists: true, $ne: "" },
+      isReady: true,
+
     }).toArray();
 
     const employeeEmails = [
@@ -4421,7 +4436,6 @@ app.post('/addtask', async (req, res) => {
     });
   }
 });
-// Fetch only the tasks this employee can do
 app.get("/employee/tasks/can-do/:employeeId", async (req, res) => {
   try {
     const { employeeId } = req.params;
@@ -4444,6 +4458,8 @@ app.get("/employee/tasks/can-do/:employeeId", async (req, res) => {
       });
     }
 
+    const isReady = employee.isReady === true;
+
     const escapeRegex = (value) =>
       String(value || "")
         .trim()
@@ -4454,28 +4470,21 @@ app.get("/employee/tasks/can-do/:employeeId", async (req, res) => {
       $options: "i",
     });
 
+    const orConditions = [
+      { tstatus: "Accepted",   taptr: employeeId },
+      { tstatus: "Completed",  taptr: employeeId },
+      { tstatus: "VerifyTask", taptr: employeeId },
+    ];
+
+    if (isReady) {
+      orConditions.unshift({ tstatus: "pending" });
+    }
+
     const tasks = await tasksCollection
       .find({
         rdep: exactInsensitive(employee.rdep),
         rsubdep: exactInsensitive(employee.rsubdep),
-
-        // show pending tasks this employee can accept
-        // and also accepted tasks already assigned to this employee
-        $or: [
-          { tstatus: "pending" },
-          {
-            tstatus: "Accepted",
-            taptr: employeeId,
-          },
-           {
-            tstatus: "Completed",
-            taptr: employeeId,
-          },
-           {
-            tstatus: "VerifyTask",
-            taptr: employeeId,
-          },
-        ],
+        $or: orConditions,
       })
       .sort({ tmt: -1 })
       .toArray();
@@ -4489,6 +4498,7 @@ app.get("/employee/tasks/can-do/:employeeId", async (req, res) => {
         rdep: employee.rdep,
         rsubdep: employee.rsubdep,
         esprts: employee.esprts,
+        isReady,
       },
       count: tasks.length,
       tasks,
@@ -4536,11 +4546,11 @@ app.put('/comptask/:id', async (req, res) => {
 });
 
 app.put('/verifytask/:id', async (req, res) => {
-  const id = req.params.id;
-  const { action } = req.body; // "approve" or "reject"
+   const id = req.params.id;
+   const { action } = req.body; // "approve" or "reject"
 
-  if (!ObjectId.isValid(id)) return res.status(400).json({ message: "Invalid task ID" });
-  if (!["approve", "reject"].includes(action)) return res.status(400).json({ message: "Invalid action" });
+   if (!ObjectId.isValid(id)) return res.status(400).json({ message: "Invalid task ID" });
+   if (!["approve", "reject"].includes(action)) return res.status(400).json({ message: "Invalid action" });
 
   try {
     const newStatus = action === "approve" ? "Completed" : "Accepted";
@@ -5246,6 +5256,7 @@ app.patch("/likereply/:commentId/:replyId", async (req, res) => {
     result,
   });
 });
+//                                                                      =====          Planners Planners Planners Planners      =====  
 
 app.post('/addplanner', async (req, res) => {
   try {
@@ -5274,7 +5285,6 @@ app.post('/addplanner', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-//                                                                      =====          Planners Planners Planners Planners      =====  
 app.get('/getque', async (req, res) => {
   try {
     const result = await plannerCollection.find().toArray();
