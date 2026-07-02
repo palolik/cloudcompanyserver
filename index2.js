@@ -496,7 +496,68 @@ async function notifyIfOffline(roomId, recipientId, message, recipientType = "cl
     console.error("Offline email notify error:", err.message);
   }
 }
+async function notifyCeoOfSupportMessage(message) {
+  try {
+    // Only notify when the USER sends a message (not the manager/CEO's own replies)
+    if (message.sender !== "user") return;
 
+    const preview = getMessagePreview(message);
+    const safeName = escapeHtml(message.bName || "A user");
+    const safePreview = escapeHtml(preview);
+    const ceoEmail = "prottoy.ceo@cloudcompany.cc";
+
+    const subject = `New support message from ${message.bName || "a user"}`;
+
+    const htmlBody = `
+      <div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:10px;">
+        <h2 style="color:#2563eb;margin-top:0;">New Support Message</h2>
+        <p><strong>${safeName}</strong> sent a new message in support chat.</p>
+        <div style="background:#f8fafc;padding:16px;border-radius:8px;margin:20px 0;">
+          <p style="margin:0 0 8px;"><strong>Message:</strong></p>
+          <p style="margin:0;color:#334155;">${safePreview}</p>
+        </div>
+        <p style="font-size:13px;color:#64748b;">
+          Support ID: ${escapeHtml(message.supportId)}<br/>
+          Time: ${escapeHtml(message.time)}
+        </p>
+        <p>Please login to the dashboard to reply.</p>
+        <br/>
+        <p style="color:#64748b;font-size:13px;">
+          <strong>Cloud Company</strong><br/>cloudcompany.cc
+        </p>
+      </div>
+    `;
+
+    await infoTransporter.sendMail({
+      from: '"Cloud Company Support" <info@cloudcompany.cc>',
+      to: ceoEmail,
+      subject,
+      text: `${message.bName || "A user"}: ${preview}`,
+      html: htmlBody,
+    });
+
+    await emailLogCollection.insertOne({
+      type: "sent",
+      from: "info@cloudcompany.cc",
+      senderName: "Cloud Company Support",
+      to: [ceoEmail],
+      cc: [], bcc: [],
+      subject,
+      body: htmlBody,
+      chatRoomId: message.supportId,
+      recipientId: "ceo",
+      recipientType: "ceo",
+      messagePreview: preview,
+      messageTime: message.time,
+      sentAt: new Date(),
+      read: true,
+    });
+
+    console.log("CEO notified of support message:", message.supportId);
+  } catch (err) {
+    console.error("CEO support notify error:", err.message);
+  }
+}
 function getMessagePreview(message) {
   if (message.attachments?.length > 0) {
     return "📎 Sent an attachment";
@@ -2246,8 +2307,9 @@ wss.on('connection', (ws, req) => {
         if (!exists) {
           await schatCollection.insertOne(newMessage);
           broadcastMessage(msg.supportId, newMessage);
-          // Notify the client if offline
-await notifyIfOffline(msg.supportId, msg.bId, newMessage, "client");        }
+    await notifyIfOffline(msg.supportId, msg.bId, newMessage, "client");    
+    await notifyCeoOfSupportMessage(newMessage);   
+    }
       }
     } catch (err) {
       console.error('WS message error:', err);
@@ -2553,6 +2615,7 @@ read: false,
 
     setTimeout(() => {
       broadcastMessage(supportId, newMessage);
+        notifyCeoOfSupportMessage(newMessage);
     }, 0);
   } catch (error) {
     console.error('Error adding client message:', error);
@@ -3141,8 +3204,7 @@ app.get('/packdetails/:id', async (req, res) => {
 });
 
 
-// Reuse the same upload middleware your /buypackage route uses
-// Just change the destination folder to keep custom request files separate
+
 
 const customUpload = multer({
   storage: multer.diskStorage({
@@ -4040,8 +4102,6 @@ app.post("/client-ping", async (req, res) => {
   }
 });
 
-
-
 app.post("/adminlogin", async (req, res) => {
 const { remail, rpass } = req.body;
 
@@ -4549,21 +4609,21 @@ app.put('/verifytask/:id', async (req, res) => {
    const id = req.params.id;
    const { action } = req.body; // "approve" or "reject"
 
-   if (!ObjectId.isValid(id)) return res.status(400).json({ message: "Invalid task ID" });
-   if (!["approve", "reject"].includes(action)) return res.status(400).json({ message: "Invalid action" });
+        if (!ObjectId.isValid(id)) return res.status(400).json({ message: "Invalid task ID" });
+          if (!["approve", "reject"].includes(action)) return res.status(400).json({ message: "Invalid action" });
 
-  try {
-    const newStatus = action === "approve" ? "Completed" : "Accepted";
+      try {
+        const newStatus = action === "approve" ? "Completed" : "Accepted";
 
-    const result = await tasksCollection.updateOne(
-      { _id: new ObjectId(id), tstatus: "VerifyTask" },
-      { $set: { 
-          tstatus: newStatus, 
-          verifiedAt: formatDateTime(new Date()),
-          verifyResult: action 
-        } 
-      }
-    );
+        const result = await tasksCollection.updateOne(
+          { _id: new ObjectId(id), tstatus: "VerifyTask" },
+          { $set: { 
+              tstatus: newStatus, 
+              verifiedAt: formatDateTime(new Date()),
+              verifyResult: action 
+            } 
+          }
+        );
 
     if (result.matchedCount === 0) {
       return res.status(404).json({ message: "Task not found or not in VerifyTask status" });
@@ -4590,7 +4650,8 @@ app.put('/verifytask/:id', async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: "Internal server error" });
   }
-});
+}
+);
 
 // 1. Employee timer expires → mark timeranout
 app.put('/timeranout/:id', async (req, res) => {
@@ -5413,7 +5474,6 @@ app.post("/submitanswers", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
         const server = app.listen(port, () => {
           console.log(`webServer is running on port: ${port}`);
       });
