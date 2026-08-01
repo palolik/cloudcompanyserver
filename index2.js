@@ -21,8 +21,8 @@ const nodemailer = require("nodemailer");
 const router   = express.Router();
 const Imap = require('imap');
 const { simpleParser } = require('mailparser');
- // const collection = 'Cloudcompany';
-const collection = 'Cloudcompanydev';
+ //const collection = 'Cloudcompany';
+ const collection = 'Cloudcompanydev';
 const webpush = require('web-push');
 
 webpush.setVapidDetails(
@@ -1447,7 +1447,7 @@ ${urlEntries}
   }
 });
 app.get('/', (req, res) => {
-          res.send('Cloud company is running');
+          res.send('Cloud company is running 2.0');
 });
 app.post('/buypackage', upload.array('mainPics'), async (req, res) => {
   const { packageId, projectTitle, projectBrief, packageName, sellPrice, buyerid,packageContents, buyername, email, coupon , time,bdp } = req.body;
