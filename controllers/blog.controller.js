@@ -290,6 +290,29 @@ const getAllBlogs = async (req, res) => {
   res.send(result);
 };
 
+const deleteBlog = async (req, res) => {
+  const { blogCollection } = getCollections();
+  const id = req.params.id;
+  const result = await blogCollection.deleteOne({ _id: new ObjectId(id) });
+  res.send(result);
+};
+
+const updateBlogStatus = async (req, res) => {
+  const { blogCollection } = getCollections();
+  const id = req.params.id;
+  const { status } = req.body;
+
+  if (!status) {
+    return res.status(400).send({ message: 'Status is required' });
+  }
+
+  const result = await blogCollection.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: { status, updatedAt: new Date() } }
+  );
+  res.send(result);
+};
+
 module.exports = {
   uploadBlogImage,
   addBlog,
@@ -299,4 +322,6 @@ module.exports = {
   getBlogJsxBySlug,
   getBlogById,
   getAllBlogs,
+  deleteBlog,
+  updateBlogStatus,
 };

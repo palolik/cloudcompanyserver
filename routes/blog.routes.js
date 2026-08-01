@@ -10,6 +10,8 @@ const {
   getBlogJsxBySlug,
   getBlogById,
   getAllBlogs,
+  deleteBlog,
+  updateBlogStatus,
 } = require('../controllers/blog.controller');
 
 router.post('/upload-blog-image', uploadBlogImageMiddleware.single('image'), uploadBlogImage);
@@ -30,5 +32,7 @@ router.get('/blogdetails-admin/:slug', getBlogDetailsAdminBySlug);
 router.get('/blogjsx/:slug', getBlogJsxBySlug);
 router.get('/blog/:id', getBlogById);
 router.get('/blogs', getAllBlogs);
+router.delete('/delblog/:id', deleteBlog);
+router.post('/blogstatus/:id', updateBlogStatus);
 
 module.exports = router;

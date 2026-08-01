@@ -3,10 +3,11 @@ const { SITE_URL } = require('../config/env');
 
 const robotsTxt = (req, res) => {
   res.type('text/plain');
+  res.set('Cache-Control', 'public, max-age=3600');
   res.send(`User-agent: *
 Allow: /
 
-# Block admin, employee, and private routes
+# Block admin, employee, and private/transactional routes
 Disallow: /admin
 Disallow: /admin/
 Disallow: /client
@@ -15,16 +16,20 @@ Disallow: /employeesignup
 Disallow: /employeeprofile/
 Disallow: /clientprofile/
 Disallow: /marketerprofile/
+Disallow: /paymentgateway
+Disallow: /forgot-password-otp
+Disallow: /reset-password
 
 Sitemap: ${SITE_URL}/sitemap.xml`);
 };
 
 const sitemapXml = async (req, res) => {
   try {
-    const { packageCollection, careerCollection } = getCollections();
-    const [packages, careers] = await Promise.all([
+    const { packageCollection, portfolioCollection, blogCollection } = getCollections();
+    const [packages, portfolioItems, blogs] = await Promise.all([
       packageCollection.find({ status: { $ne: 'hidden' } }).toArray(),
-      careerCollection.find().toArray(),
+      portfolioCollection.find({ status: 'visible' }).toArray(),
+      blogCollection.find({ status: 'published' }).toArray(),
     ]);
 
     const today = new Date().toISOString().split('T')[0];
@@ -39,6 +44,9 @@ const sitemapXml = async (req, res) => {
       { url: '/signin', priority: '0.5', changefreq: 'yearly' },
       { url: '/clientsignin', priority: '0.5', changefreq: 'yearly' },
       { url: '/clientsignup', priority: '0.5', changefreq: 'yearly' },
+      { url: '/termsandcondition', priority: '0.3', changefreq: 'yearly' },
+      { url: '/privacypolicy', priority: '0.3', changefreq: 'yearly' },
+      { url: '/blog', priority: '0.7', changefreq: 'weekly' },
     ];
 
     const packageUrls = packages.map((pkg) => ({
@@ -50,14 +58,25 @@ const sitemapXml = async (req, res) => {
         : today,
     }));
 
-    const careerUrls = careers.map((job) => ({
-      url: `/career/${job._id}`,
+    const portfolioUrls = portfolioItems.map((item) => ({
+      url: `/portfolio/${item._id}`,
       priority: '0.6',
-      changefreq: 'weekly',
-      lastmod: today,
+      changefreq: 'monthly',
+      lastmod: item.updatedAt
+        ? new Date(item.updatedAt).toISOString().split('T')[0]
+        : today,
     }));
 
-    const allUrls = [...staticPages, ...packageUrls, ...careerUrls];
+    const blogUrls = blogs.map((post) => ({
+      url: `/blog/${post.slug}`,
+      priority: '0.6',
+      changefreq: 'monthly',
+      lastmod: post.updatedAt
+        ? new Date(post.updatedAt).toISOString().split('T')[0]
+        : today,
+    }));
+
+    const allUrls = [...staticPages, ...packageUrls, ...portfolioUrls, ...blogUrls];
 
     const urlEntries = allUrls
       .map(({ url, priority, changefreq, lastmod }) => `
@@ -75,6 +94,7 @@ ${urlEntries}
 </urlset>`;
 
     res.type('application/xml');
+    res.set('Cache-Control', 'public, max-age=3600');
     res.send(xml);
   } catch (error) {
     console.error('Sitemap generation error:', error);
