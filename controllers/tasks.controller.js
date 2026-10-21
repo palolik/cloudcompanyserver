@@ -1,6 +1,7 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
 const { infoTransporter } = require('../config/mailer');
+const { sendPushToUsers, profilePath } = require('../services/push.service');
 const { formatDateTime } = require('../utils/time');
 
 const getAllTasks = async (req, res) => {
@@ -79,6 +80,12 @@ const addTask = async (req, res) => {
       rdep: emp.rdep,
       rsubdep: emp.rsubdep,
     })));
+
+    sendPushToUsers(matchedEmployees.map(emp => emp._id.toString()), {
+      title: 'New task available',
+      body: `${newPost.tname || 'A new task'} is open for your department.`,
+      data: { type: 'task', taskId },
+    });
 
     let emailSent = false;
     let emailError = null;
@@ -302,6 +309,17 @@ const verifyTask = async (req, res) => {
       return res.status(404).json({ message: 'Task not found or not in VerifyTask status' });
     }
 
+    const verifiedTask = await tasksCollection.findOne({ _id: new ObjectId(id) });
+    if (verifiedTask?.taptr && ObjectId.isValid(verifiedTask.taptr)) {
+      sendPushToUsers(verifiedTask.taptr, {
+        title: action === 'approve' ? 'Task approved' : 'Task needs changes',
+        body: action === 'approve'
+          ? `"${verifiedTask.tname}" was approved.`
+          : `"${verifiedTask.tname}" was sent back to you.`,
+        data: { type: 'task', taskId: id, url: profilePath('employee', verifiedTask.taptr) },
+      });
+    }
+
     // Only activate next task if approved
     if (action === 'approve') {
       const nextTask = await tasksCollection.findOne({
@@ -396,6 +414,14 @@ const reassignTask = async (req, res) => {
         }
       }
     );
+    if (newEmployeeId) {
+      const task = await tasksCollection.findOne({ _id: new ObjectId(id) });
+      sendPushToUsers(newEmployeeId, {
+        title: 'Task assigned to you',
+        body: `${task?.tname || 'A task'} was assigned to you.`,
+        data: { type: 'task', taskId: id, url: profilePath('employee', newEmployeeId) },
+      });
+    }
     res.json({ message: 'Task reassigned successfully', result });
   } catch (error) {
     res.status(500).json({ message: 'Internal server error' });

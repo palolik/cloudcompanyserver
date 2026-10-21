@@ -1,6 +1,7 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
 const { infoTransporter } = require('../config/mailer');
+const { sendPushToUsers, profilePath } = require('../services/push.service');
 
 const buyPackage = async (req, res) => {
   const { PsoldCollection } = getCollections();
@@ -207,6 +208,19 @@ const setOrderStatus = async (req, res) => {
       { $set: updateFields }
     );
 
+    if (status === 'started' || status === 'completed') {
+      const order = await PsoldCollection.findOne({ _id: new ObjectId(orderid) });
+      if (order?.buyerid) {
+        sendPushToUsers(order.buyerid, {
+          title: status === 'started' ? 'Work has started' : 'Project completed',
+          body: status === 'started'
+            ? `Our team started working on "${order.projectTitle || order.packageName}".`
+            : `"${order.projectTitle || order.packageName}" is completed.`,
+          data: { type: 'order', orderId: orderid, url: profilePath('client', order.buyerid) },
+        });
+      }
+    }
+
     res.send(result);
   } catch (error) {
     console.error('Error updating status:', error);
@@ -235,6 +249,14 @@ const setOrderPaymentStatus = async (req, res) => {
 
     const order = await PsoldCollection.findOne({ _id: new ObjectId(orderid) });
     if (!order) return res.status(404).send({ message: 'Order not found' });
+
+    if (order.buyerid) {
+      sendPushToUsers(order.buyerid, {
+        title: 'Payment confirmed',
+        body: `We received your payment for "${order.projectTitle || order.packageName}".`,
+        data: { type: 'order', orderId: orderid, url: profilePath('client', order.buyerid) },
+      });
+    }
 
 
     try {

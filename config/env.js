@@ -27,9 +27,24 @@ const CORS_ORIGINS = [
   'https://www.cloudcompany.cc',
 ];
 
-const VAPID_PUBLIC_KEY = 'BIf5he-5B_gZevYmrEe58o6z9gEb2vaP8UY604u25m51-HcWR84hxrF_k2XWmQtTaqjrWqL4xLI7frK1-8mV_H4';
-const VAPID_PRIVATE_KEY = 'tQabVyot50UCE-TpFNoIq0n2YoFhG-Qg9eal5HOB5aI';
-const VAPID_CONTACT_EMAIL = 'mailto:prottoy.ceo@cloudcompany.cc';
+// Public site (CCUser) origin, used for links in push notifications.
+const WEB_APP_URL = process.env.WEB_APP_URL || SITE_URL;
+
+// CC Events (analytics + notification rules). When any of the three is
+// missing, tracking is a silent no-op.
+const CC_EVENTS_URL = process.env.CC_EVENTS_URL || '';
+const CC_EVENTS_API_KEY = process.env.CC_EVENTS_API_KEY || '';
+const CC_EVENTS_API_SECRET = process.env.CC_EVENTS_API_SECRET || '';
+// Shared secret for the CC Events delivery webhook (POST /events/deliver).
+const CC_EVENTS_WEBHOOK_SECRET = process.env.CC_EVENTS_WEBHOOK_SECRET || '';
+// Read-only CC Events dashboard link shown in CCAdmin.
+const CC_EVENTS_DASHBOARD_URL = process.env.CC_EVENTS_DASHBOARD_URL || '';
+
+// Firebase Cloud Messaging (project "cloudcompany-dbc36"). Path to the
+// service-account JSON (relative to the project root), or the JSON itself in
+// FIREBASE_SERVICE_ACCOUNT. Unset = push is a silent no-op.
+const FIREBASE_SERVICE_ACCOUNT_PATH = process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '';
+const FIREBASE_SERVICE_ACCOUNT = process.env.FIREBASE_SERVICE_ACCOUNT || '';
 
 module.exports = {
   PORT,
@@ -39,7 +54,12 @@ module.exports = {
   MONGO_URI,
   DB_NAME,
   CORS_ORIGINS,
-  VAPID_PUBLIC_KEY,
-  VAPID_PRIVATE_KEY,
-  VAPID_CONTACT_EMAIL,
+  WEB_APP_URL,
+  CC_EVENTS_URL,
+  CC_EVENTS_API_KEY,
+  CC_EVENTS_API_SECRET,
+  CC_EVENTS_WEBHOOK_SECRET,
+  CC_EVENTS_DASHBOARD_URL,
+  FIREBASE_SERVICE_ACCOUNT_PATH,
+  FIREBASE_SERVICE_ACCOUNT,
 };

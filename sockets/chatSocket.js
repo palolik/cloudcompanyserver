@@ -2,6 +2,21 @@ const WebSocket = require('ws');
 const { getCollections } = require('../config/db');
 const { clients, broadcastMessage } = require('./registry');
 const { notifyIfOffline, notifyCeoOfSupportMessage } = require('../services/notification.service');
+const { trackEvent } = require('../utils/ccEvents');
+
+// Same events as the REST chat routes (analytics/eventRules.js chatRule).
+function trackChatMessage(chatType, roomId, userId, recipientType, message) {
+  const fromManager = message.sender === 'manager';
+  const properties = { chatType, roomId, fromManager, actorType: fromManager ? 'admin' : recipientType, transport: 'websocket' };
+  trackEvent({ externalId: fromManager ? 'admin' : userId, event: 'chat_message_sent', properties });
+  if (fromManager && userId) {
+    trackEvent({
+      externalId: userId,
+      event: 'chat_message_received',
+      properties: { chatType, roomId, actorType: recipientType, transport: 'websocket' },
+    });
+  }
+}
 
 // Constructed with noServer so it never auto-attaches to an http.Server;
 // upgrades are wired manually via attachWebSocketServer() once the real
@@ -62,6 +77,7 @@ wss.on('connection', (ws, req) => {
           await employeechatCollection.insertOne(newMessage);
           broadcastMessage(msg.taskId, newMessage);
           // Notify the employee if offline (sender is manager, recipient is empId)
+          trackChatMessage('employee', msg.taskId, msg.empId, 'employee', newMessage);
           await notifyIfOffline(msg.taskId, msg.empId, newMessage, 'employee');
         }
 
@@ -77,6 +93,7 @@ wss.on('connection', (ws, req) => {
           await clientchatCollection.insertOne(newMessage);
           broadcastMessage(msg.orderId, newMessage);
           // Notify the client if offline
+          trackChatMessage('client', msg.orderId, msg.bId, 'client', newMessage);
           await notifyIfOffline(msg.orderId, msg.bId, newMessage, 'client');
         }
 
@@ -91,6 +108,7 @@ wss.on('connection', (ws, req) => {
         if (!exists) {
           await schatCollection.insertOne(newMessage);
           broadcastMessage(msg.supportId, newMessage);
+          trackChatMessage('support', msg.supportId, msg.bId, 'client', newMessage);
           await notifyIfOffline(msg.supportId, msg.bId, newMessage, 'client');
           await notifyCeoOfSupportMessage(newMessage);
         }

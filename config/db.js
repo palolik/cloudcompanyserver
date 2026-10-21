@@ -50,7 +50,7 @@ async function connectDB() {
     customPackageRequestCollection: db.collection('custompackage'),
     emailLogCollection: db.collection('emaillog'),
     manualIncomeCollection: db.collection('mincome'),
-    pushSubscriptionCollection: db.collection('notification'),
+    deviceTokenCollection: db.collection('devicetokens'),
     passwordOtpCollection: db.collection('passwordOtps'),
     blogCollection: db.collection('blogs'),
   };

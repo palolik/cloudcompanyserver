@@ -1,17 +1,33 @@
-const { getCollections } = require('../config/db');
+const { validateDeviceToken, registerDeviceToken, removeDeviceToken } = require('../services/push.service');
 
-const subscribe = async (req, res) => {
-  const { pushSubscriptionCollection } = getCollections();
-  const { userId, subscription } = req.body;
-  if (!userId || !subscription)
-    return res.status(400).json({ message: 'userId and subscription required' });
+// Save this device's FCM token for the logged-in client or employee.
+const registerToken = async (req, res) => {
+  const { token, platform, error } = validateDeviceToken(req.body);
+  if (error) return res.status(400).json({ success: false, message: error });
 
-  await pushSubscriptionCollection.updateOne(
-    { userId },
-    { $set: { userId, subscription } },
-    { upsert: true }
-  );
-  res.json({ success: true });
+  try {
+    await registerDeviceToken({ ...req.authUser, token, platform });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Register device token error:', err.message);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
 };
 
-module.exports = { subscribe };
+// Forget this device's token on logout. Needs only the token itself (the
+// session token may already have expired); a token is unguessable and only
+// known to the device it belongs to.
+const unregisterToken = async (req, res) => {
+  const { token, error } = validateDeviceToken(req.body);
+  if (error) return res.status(400).json({ success: false, message: error });
+
+  try {
+    await removeDeviceToken(token);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Remove device token error:', err.message);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+module.exports = { registerToken, unregisterToken };

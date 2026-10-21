@@ -8,14 +8,15 @@ const bodyParser = require('body-parser');
 const { PORT } = require('./config/env');
 const corsOptions = require('./config/cors');
 const { connectDB } = require('./config/db');
-require('./config/webpush'); // registers VAPID details as a side effect
 const stampActivity = require('./middleware/stampActivity');
 const { attachWebSocketServer } = require('./sockets/chatSocket');
+const eventTracking = require('./analytics/tracker');
 
 // ── Batch A: routes registered BEFORE stampActivity in the original file ──
 // (blog through employee CRUD — none of these get their lastActive stamped)
 const blogRoutes = require('./routes/blog.routes');
 const pushRoutes = require('./routes/push.routes');
+const eventsRoutes = require('./routes/events.routes');
 const authRoutes = require('./routes/auth.routes');
 const emailRoutes = require('./routes/email.routes');
 const passwordResetRoutes = require('./routes/passwordReset.routes');
@@ -59,7 +60,13 @@ const plannerRoutes = require('./routes/planner.routes');
 const app = express();
 const server = http.createServer(app);
 
-app.use(express.json({ limit: '25mb' }));
+app.use(express.json({
+  limit: '25mb',
+  // The CC Events webhook signs the exact bytes it sent.
+  verify: (req, res, buf) => {
+    if (req.originalUrl.startsWith('/events/deliver')) req.rawBody = buf;
+  },
+}));
 app.use(express.urlencoded({ limit: '25mb', extended: true }));
 app.use(bodyParser.json({ limit: '25mb' }));
 app.use(cors(corsOptions));
@@ -71,9 +78,13 @@ if (!fs.existsSync(uploadDirectory)) {
   fs.mkdirSync(uploadDirectory);
 }
 
+// Sends CC Events analytics for every route below (see analytics/eventRules.js).
+app.use(eventTracking);
+
 // ── Batch A (unstamped) ──
 app.use(blogRoutes);
 app.use(pushRoutes);
+app.use(eventsRoutes);
 app.use(authRoutes);
 app.use(emailRoutes);
 app.use(passwordResetRoutes);

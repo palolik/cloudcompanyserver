@@ -2,6 +2,7 @@ const { ObjectId } = require('mongodb');
 const { infoTransporter } = require('../config/mailer');
 const { getCollections } = require('../config/db');
 const { isUserOnline } = require('../sockets/registry');
+const { sendPushToUsers, profilePath } = require('./push.service');
 
 function escapeHtml(value) {
   return String(value || '')
@@ -93,6 +94,12 @@ async function notifyIfOffline(roomId, recipientId, message, recipientType = 'cl
 
     const { emailLogCollection } = getCollections();
     const preview = getMessagePreview(message);
+
+    sendPushToUsers(recipientId, {
+      title: 'New message from Cloud Company',
+      body: preview,
+      data: { type: 'chat', roomId, url: profilePath(recipientType, recipientId) },
+    });
 
     // Duplicate protection
     const existingEmail = await emailLogCollection.findOne({

@@ -1,6 +1,7 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
 const { infoTransporter } = require('../config/mailer');
+const { sendPushToUsers, profilePath } = require('../services/push.service');
 
 const addCustomPackageRequest = async (req, res) => {
   try {
@@ -88,6 +89,22 @@ const updateCustomPackageRequest = async (req, res) => {
       { _id: new ObjectId(id) },
       { $set: { ...updates, updatedAt: new Date() } }
     );
+
+    if (updates.status === 'started' || updates.status === 'completed' || updates.pstatus === 'paid') {
+      const request = await customPackageRequestCollection.findOne({ _id: new ObjectId(id) });
+      if (request?.buyerid) {
+        const name = request.projectTitle || request.packageName || 'your custom package';
+        const push = updates.pstatus === 'paid'
+          ? { title: 'Payment confirmed', body: `We received your payment for "${name}".` }
+          : updates.status === 'started'
+            ? { title: 'Work has started', body: `Our team started working on "${name}".` }
+            : { title: 'Project completed', body: `"${name}" is completed.` };
+        sendPushToUsers(request.buyerid, {
+          ...push,
+          data: { type: 'order', orderId: id, url: profilePath('client', request.buyerid) },
+        });
+      }
+    }
 
     // ── If pstatus is being set to "paid", send confirmation email ──
     if (updates.pstatus === 'paid') {
