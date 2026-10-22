@@ -1,6 +1,7 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { withWebp } = require('../services/imageOptimizer');
 
 const projectRoot = path.join(__dirname, '..');
 
@@ -229,17 +230,18 @@ const customUpload = multer({
   }),
 });
 
+// Every uploader is wrapped so uploaded raster images are optimised and stored as webp.
 module.exports = {
-  upload,
-  uploadCv,
-  uploadPortfolioImage,
-  uploaddp,
-  uploadPackageCover,
-  uploadBlog,
-  uploadBlogImage,
-  uploadchatfile,
+  upload: withWebp(upload),
+  uploadCv: withWebp(uploadCv),
+  uploadPortfolioImage: withWebp(uploadPortfolioImage),
+  uploaddp: withWebp(uploaddp),
+  uploadPackageCover: withWebp(uploadPackageCover),
+  uploadBlog: withWebp(uploadBlog),
+  uploadBlogImage: withWebp(uploadBlogImage),
+  uploadchatfile: withWebp(uploadchatfile),
   getFileUrl,
-  uploadechatfile,
+  uploadechatfile: withWebp(uploadechatfile),
   geteFileUrl,
-  customUpload,
+  customUpload: withWebp(customUpload),
 };
