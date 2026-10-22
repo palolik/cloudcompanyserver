@@ -44,7 +44,7 @@ const getOrders = async (req, res) => {
   const updatedProducts = result.map(product => ({
     ...product,
     attachments: product.attachments.map(pic =>
-      pic.replace('D:\\cloudcompanyserver', 'http://localhost:5000')
+      pic.replace('D:\\cloudcompanyserver', 'http://localhost:5050')
     )
   }));
   res.json(updatedProducts);
@@ -56,7 +56,7 @@ const getOrdersByUserId = async (req, res) => {
   const updatedProducts = result.map(product => ({
     ...product,
     attachments: product.attachments.map(pic =>
-      pic.replace('D:\\cloudcompanyserver', 'http://localhost:5000')
+      pic.replace('D:\\cloudcompanyserver', 'http://localhost:5050')
     )
   }));
   res.json(updatedProducts);
@@ -75,7 +75,7 @@ const getClientOrders = async (req, res) => {
     ...product,
     orderType: 'regular',
     attachments: product.attachments.map(pic =>
-      pic.replace('D:\\cloudcompanyserver', 'http://localhost:5000')
+      pic.replace('D:\\cloudcompanyserver', 'http://localhost:5050')
     )
   }));
 
@@ -120,7 +120,7 @@ const getPaidClientOrders = async (req, res) => {
     ...product,
     orderType: 'regular',
     attachments: product.attachments.map(pic =>
-      pic.replace('D:\\cloudcompanyserver', 'http://localhost:5000')
+      pic.replace('D:\\cloudcompanyserver', 'http://localhost:5050')
     )
   }));
 

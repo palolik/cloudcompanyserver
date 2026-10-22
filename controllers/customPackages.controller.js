@@ -15,7 +15,7 @@ const addCustomPackageRequest = async (req, res) => {
 
     // Same URL pattern as regular order attachments
     const attachments = (req.files || []).map(file =>
-      `http://localhost:5000/uploads/custom-requests/${file.filename}`
+      `http://localhost:5050/uploads/custom-requests/${file.filename}`
     );
 
     const request = {
