@@ -1,16 +1,22 @@
 require('dotenv').config();
 
+// Secrets come only from .env (see .env.example); refuse to start without them.
+const required = (name) => {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required env var ${name} (see .env.example)`);
+  return value;
+};
+
 const PORT = process.env.PORT || 5050;
 
-const JWT_SECRET = '237a3f9e2d1cc34bc6d731b9c1640d4a2dc821cd199ff6a37562643b5090e61f';
+const JWT_SECRET = required('JWT_SECRET');
 
-// Used only by /adminlogin, exactly as in the original file (falls back to a
-// different literal than the shared JWT_SECRET above).
-const ADMIN_JWT_SECRET = process.env.JWT_SECRET || 'yourSecretKey';
+// Used by /adminlogin and requireAdmin.
+const ADMIN_JWT_SECRET = JWT_SECRET;
 
 const SITE_URL = 'https://cloudcompany.cc';
 
-const MONGO_URI = `mongodb+srv://prottoy2441139:PCcEnjG5yyVwyxIw@cluster0.fagav7n.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+const MONGO_URI = `mongodb+srv://${encodeURIComponent(required('EMAILDB'))}:${encodeURIComponent(required('PASSDB'))}@cluster0.fagav7n.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
 // const DB_NAME = 'Cloudcompany';
 const DB_NAME = 'Cloudcompanydev';

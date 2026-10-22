@@ -8,6 +8,7 @@ const bodyParser = require('body-parser');
 const { PORT } = require('./config/env');
 const corsOptions = require('./config/cors');
 const { connectDB } = require('./config/db');
+const { migrateLegacyLogs } = require('./services/mail');
 const stampActivity = require('./middleware/stampActivity');
 const { attachWebSocketServer } = require('./sockets/chatSocket');
 const eventTracking = require('./analytics/tracker');
@@ -18,7 +19,7 @@ const blogRoutes = require('./routes/blog.routes');
 const pushRoutes = require('./routes/push.routes');
 const eventsRoutes = require('./routes/events.routes');
 const authRoutes = require('./routes/auth.routes');
-const emailRoutes = require('./routes/email.routes');
+const mailRoutes = require('./routes/mail.routes');
 const passwordResetRoutes = require('./routes/passwordReset.routes');
 const seoRoutes = require('./routes/seo.routes');
 const ordersRoutes = require('./routes/orders.routes');
@@ -86,7 +87,7 @@ app.use(blogRoutes);
 app.use(pushRoutes);
 app.use(eventsRoutes);
 app.use(authRoutes);
-app.use(emailRoutes);
+app.use(mailRoutes);
 app.use(passwordResetRoutes);
 app.use(seoRoutes);
 app.use(ordersRoutes);
@@ -130,6 +131,7 @@ app.use(plannerRoutes);
 
 async function start() {
   await connectDB();
+  await migrateLegacyLogs().catch((err) => console.error('Email log migration failed:', err.message));
 
   attachWebSocketServer(server);
 

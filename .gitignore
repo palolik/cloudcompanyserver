@@ -23,6 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 # Secrets
-.env
+
 config/firebase-service-account.json
 *-firebase-adminsdk-*.json
