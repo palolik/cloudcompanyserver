@@ -38,7 +38,7 @@ router.post('/mail/mailboxes/:mailbox/verify', requireAdmin, handle(async (req, 
   res.json({ success: result.success, data: result });
 }));
 
-// Body: { from: 'info' | 'support' | 'ceo', to, cc?, bcc?, subject, html?, text?, senderName? }
+// Body: { from: 'info' | 'support' | 'ceo' | 'noreply', to, cc?, bcc?, subject, html?, text?, senderName? }
 router.post('/mail/send', requireAdmin, handle(async (req, res) => {
   const { from, to, cc, bcc, subject, html, text, senderName } = req.body || {};
   const email = await mail.sendMail({

@@ -21,6 +21,7 @@ const MAILBOXES = [
   { key: 'info', address: `info@${DOMAIN}`, name: BRAND, passwordEnv: 'MAIL_INFO_PASSWORD' },
   { key: 'support', address: `support@${DOMAIN}`, name: `${BRAND} Support`, passwordEnv: 'MAIL_SUPPORT_PASSWORD' },
   { key: 'ceo', address: `prottoy.ceo@${DOMAIN}`, name: BRAND, passwordEnv: 'MAIL_CEO_PASSWORD' },
+  { key: 'noreply', address: `noreply@${DOMAIN}`, name: BRAND, passwordEnv: 'MAIL_NOREPLY_PASSWORD' },
 ];
 
 // Inbox logs saved before mailboxes were tracked all came from this mailbox.

@@ -12,6 +12,7 @@ const transporters = {
   'prottoy.ceo@cloudcompany.cc': lazyTransporter('ceo'),
   'info@cloudcompany.cc': lazyTransporter('info'),
   'support@cloudcompany.cc': lazyTransporter('support'),
+  'noreply@cloudcompany.cc': lazyTransporter('noreply'),
 };
 
 const infoTransporter = transporters['info@cloudcompany.cc'];
