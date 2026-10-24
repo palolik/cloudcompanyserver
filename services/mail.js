@@ -13,8 +13,7 @@ const nodemailer = require('nodemailer');
 const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
 const { getCollections } = require('../config/db');
-
-const DOMAIN = 'cloudcompany.cc';
+const { MAIL_DOMAIN: DOMAIN } = require('../config/env');
 const BRAND = 'Cloud Company';
 
 const MAILBOXES = [

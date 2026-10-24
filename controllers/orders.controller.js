@@ -1,6 +1,7 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
-const { infoTransporter } = require('../config/mailer');
+const { SERVER_URL } = require('../config/env');
+const { infoTransporter, MAIL } = require('../config/mailer');
 const { sendPushToUsers, profilePath } = require('../services/push.service');
 
 const buyPackage = async (req, res) => {
@@ -44,7 +45,7 @@ const getOrders = async (req, res) => {
   const updatedProducts = result.map(product => ({
     ...product,
     attachments: product.attachments.map(pic =>
-      pic.replace('D:\\cloudcompanyserver', 'http://localhost:5050')
+      pic.replace('D:\\cloudcompanyserver', SERVER_URL)
     )
   }));
   res.json(updatedProducts);
@@ -56,7 +57,7 @@ const getOrdersByUserId = async (req, res) => {
   const updatedProducts = result.map(product => ({
     ...product,
     attachments: product.attachments.map(pic =>
-      pic.replace('D:\\cloudcompanyserver', 'http://localhost:5050')
+      pic.replace('D:\\cloudcompanyserver', SERVER_URL)
     )
   }));
   res.json(updatedProducts);
@@ -75,7 +76,7 @@ const getClientOrders = async (req, res) => {
     ...product,
     orderType: 'regular',
     attachments: product.attachments.map(pic =>
-      pic.replace('D:\\cloudcompanyserver', 'http://localhost:5050')
+      pic.replace('D:\\cloudcompanyserver', SERVER_URL)
     )
   }));
 
@@ -120,7 +121,7 @@ const getPaidClientOrders = async (req, res) => {
     ...product,
     orderType: 'regular',
     attachments: product.attachments.map(pic =>
-      pic.replace('D:\\cloudcompanyserver', 'http://localhost:5050')
+      pic.replace('D:\\cloudcompanyserver', SERVER_URL)
     )
   }));
 
@@ -261,7 +262,7 @@ const setOrderPaymentStatus = async (req, res) => {
 
     try {
       await infoTransporter.sendMail({
-        from: '"Cloud Company" <info@cloudcompany.cc>',
+        from: `"Cloud Company" <${MAIL.info}>`,
         to: order.email,
         subject: `Payment Confirmed – ${order.packageName}`,
         html: `
@@ -278,7 +279,7 @@ const setOrderPaymentStatus = async (req, res) => {
                 <tr><td style="padding: 6px 0;"><strong>Order ID</strong></td><td>${orderid}</td></tr>
               </table>
             </div>
-            <p>If you have any questions, feel free to contact us at <a href="mailto:info@cloudcompany.cc">info@cloudcompany.cc</a>.</p>
+            <p>If you have any questions, feel free to contact us at <a href="mailto:${MAIL.info}">${MAIL.info}</a>.</p>
             <br/>
             <p style="color: #64748b; font-size: 13px;">Best regards,<br/><strong>Cloud Company Team</strong><br/>cloudcompany.cc</p>
           </div>
@@ -336,7 +337,7 @@ const setOrderPaymentStatus = async (req, res) => {
 const testEmail = async (req, res) => {
   try {
     await infoTransporter.sendMail({
-      from: '"Cloud Company" <info@cloudcompany.cc>',
+      from: `"Cloud Company" <${MAIL.info}>`,
       to: 'azizulalamprottoy@gmail.com',  // নিজেকে পাঠাও
       subject: 'Test Email',
       html: '<p>Test email working!</p>',

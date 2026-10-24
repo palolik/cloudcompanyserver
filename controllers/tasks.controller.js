@@ -1,6 +1,6 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
-const { infoTransporter } = require('../config/mailer');
+const { infoTransporter, MAIL } = require('../config/mailer');
 const { sendPushToUsers, profilePath } = require('../services/push.service');
 const { formatDateTime } = require('../utils/time');
 
@@ -124,7 +124,7 @@ const addTask = async (req, res) => {
 
       try {
         await infoTransporter.sendMail({
-          from: '"Cloud Company" <info@cloudcompany.cc>',
+          from: `"Cloud Company" <${MAIL.info}>`,
           bcc: employeeEmails.join(', '),
           subject,
           text: htmlBody.replace(/<[^>]*>/g, ''),
@@ -135,7 +135,7 @@ const addTask = async (req, res) => {
 
         await emailLogCollection.insertOne({
           type: 'sent',
-          from: 'info@cloudcompany.cc',
+          from: MAIL.info,
           senderName: 'Cloud Company',
           to: [],
           cc: [],

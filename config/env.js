@@ -14,24 +14,24 @@ const JWT_SECRET = required('JWT_SECRET');
 // Used by /adminlogin and requireAdmin.
 const ADMIN_JWT_SECRET = JWT_SECRET;
 
-const SITE_URL = 'https://cloudcompany.cc';
+// Comma-separated env value as a trimmed array.
+const list = (value) => String(value || '').split(',').map((s) => s.trim()).filter(Boolean);
 
-const MONGO_URI = `mongodb+srv://${encodeURIComponent(required('EMAILDB'))}:${encodeURIComponent(required('PASSDB'))}@cluster0.fagav7n.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+const SITE_URL = process.env.SITE_URL || 'https://cloudcompany.cc';
 
-// const DB_NAME = 'Cloudcompany';
-const DB_NAME = 'Cloudcompanydev';
+// Public origin of this API, used in links to uploaded files.
+const SERVER_URL = (process.env.SERVER_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
 
-const CORS_ORIGINS = [
-  'http://localhost:5173',
-  'http://localhost:5174',
-  'https://crudapp-beb6a.web.app',
-  'http://10.0.2.2:5173',
-  'http://10.0.2.2:5174',
-  'https://cloudcompany.cc/',
-  'https://cloudcompany.cc',
-  'https://www.cloudcompany.cc/',
-  'https://www.cloudcompany.cc',
-];
+// Where /ref/:code sends visitors after counting the referral.
+const REFERRAL_REDIRECT_URL = process.env.REFERRAL_REDIRECT_URL || SITE_URL;
+
+const MONGO_URI = required('MONGO_URI');
+const DB_NAME = required('DB_NAME');
+
+const CORS_ORIGINS = list(process.env.CORS_ORIGINS);
+
+// Domain of the company mailboxes (info@, support@, ...).
+const MAIL_DOMAIN = process.env.MAIL_DOMAIN || 'cloudcompany.cc';
 
 // Public site (CCUser) origin, used for links in push notifications.
 const WEB_APP_URL = process.env.WEB_APP_URL || SITE_URL;
@@ -57,9 +57,12 @@ module.exports = {
   JWT_SECRET,
   ADMIN_JWT_SECRET,
   SITE_URL,
+  SERVER_URL,
+  REFERRAL_REDIRECT_URL,
   MONGO_URI,
   DB_NAME,
   CORS_ORIGINS,
+  MAIL_DOMAIN,
   WEB_APP_URL,
   CC_EVENTS_URL,
   CC_EVENTS_API_KEY,

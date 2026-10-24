@@ -1,4 +1,5 @@
 const { getCollections } = require('../config/db');
+const { REFERRAL_REDIRECT_URL } = require('../config/env');
 
 const getMarketing = async (req, res) => {
   try {
@@ -71,7 +72,7 @@ const followReferralLink = async (req, res) => {
     }
 
     // Redirect to your landing page
-    res.redirect(`http://localhost:5173`);
+    res.redirect(REFERRAL_REDIRECT_URL);
   } catch (err) {
     console.error(err);
     res.status(500).send('Error processing referral link');

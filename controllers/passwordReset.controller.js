@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const { getCollections } = require('../config/db');
-const { transporters } = require('../config/mailer');
+const { transporters, MAIL } = require('../config/mailer');
 
 const getUserCollectionByType = (userType) => {
   const { employeeCollection, clientCollection } = getCollections();
@@ -51,7 +51,7 @@ const sendOtp = async (req, res) => {
       createdAt: new Date(),
     });
 
-    const fromEmail = 'support@cloudcompany.cc';
+    const fromEmail = MAIL.support;
     const selectedTransporter = transporters[fromEmail];
 
     await selectedTransporter.sendMail({

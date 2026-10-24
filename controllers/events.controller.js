@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
-const { infoTransporter } = require('../config/mailer');
+const { infoTransporter, MAIL } = require('../config/mailer');
 const { CC_EVENTS_WEBHOOK_SECRET, CC_EVENTS_DASHBOARD_URL } = require('../config/env');
 const { escapeHtml } = require('../services/notification.service');
 const { sendPushToUsers, profilePath } = require('../services/push.service');
@@ -17,7 +17,7 @@ const { sendPushToUsers, profilePath } = require('../services/push.service');
 
 const MAX_SKEW_SECONDS = 5 * 60;
 const MAILBOXES = {
-  info: '"Cloud Company" <info@cloudcompany.cc>',
+  info: `"Cloud Company" <${MAIL.info}>`,
 };
 
 // X-CC-Events-Signature: sha256=HMAC(secret, `${timestamp}.${rawBody}`), and
@@ -128,7 +128,7 @@ async function deliver(payload = {}) {
     await infoTransporter.sendMail({ from, to: user.remail.trim(), subject, text: content.body, html });
     const log = await emailLogCollection.insertOne({
       type: 'sent',
-      from: 'info@cloudcompany.cc',
+      from: MAIL.info,
       senderName: 'Cloud Company',
       to: [user.remail.trim()],
       cc: [],

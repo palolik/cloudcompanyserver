@@ -1,5 +1,5 @@
 const { ObjectId } = require('mongodb');
-const { infoTransporter } = require('../config/mailer');
+const { infoTransporter, MAIL } = require('../config/mailer');
 const { getCollections } = require('../config/db');
 const { isUserOnline } = require('../sockets/registry');
 const { sendPushToUsers, profilePath } = require('./push.service');
@@ -157,7 +157,7 @@ async function notifyIfOffline(roomId, recipientId, message, recipientType = 'cl
     `;
 
     await infoTransporter.sendMail({
-      from: '"Cloud Company" <info@cloudcompany.cc>',
+      from: `"Cloud Company" <${MAIL.info}>`,
       to: recipient.email,
       subject,
       text: preview,
@@ -166,7 +166,7 @@ async function notifyIfOffline(roomId, recipientId, message, recipientType = 'cl
 
     await emailLogCollection.insertOne({
       type: 'sent',
-      from: 'info@cloudcompany.cc',
+      from: MAIL.info,
       senderName: 'Cloud Company',
       to: [recipient.email],
       cc: [],
@@ -198,7 +198,7 @@ async function notifyCeoOfSupportMessage(message) {
     const preview = getMessagePreview(message);
     const safeName = escapeHtml(message.bName || 'A user');
     const safePreview = escapeHtml(preview);
-    const ceoEmail = 'prottoy.ceo@cloudcompany.cc';
+    const ceoEmail = MAIL.ceo;
 
     const subject = `New support message from ${message.bName || 'a user'}`;
 
@@ -223,7 +223,7 @@ async function notifyCeoOfSupportMessage(message) {
     `;
 
     await infoTransporter.sendMail({
-      from: '"Cloud Company Support" <info@cloudcompany.cc>',
+      from: `"Cloud Company Support" <${MAIL.info}>`,
       to: ceoEmail,
       subject,
       text: `${message.bName || 'A user'}: ${preview}`,
@@ -232,7 +232,7 @@ async function notifyCeoOfSupportMessage(message) {
 
     await emailLogCollection.insertOne({
       type: 'sent',
-      from: 'info@cloudcompany.cc',
+      from: MAIL.info,
       senderName: 'Cloud Company Support',
       to: [ceoEmail],
       cc: [], bcc: [],

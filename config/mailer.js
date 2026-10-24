@@ -1,4 +1,4 @@
-const { getTransporter } = require('../services/mail');
+const { getTransporter, listMailboxes } = require('../services/mail');
 
 // Transporters for code that sends directly (orders, tasks, events, password
 // reset). Mailbox passwords come from env (.env); see services/mail.js.
@@ -8,13 +8,12 @@ const lazyTransporter = (mailbox) => ({
   sendMail: (message) => getTransporter(mailbox).sendMail(message),
 });
 
-const transporters = {
-  'prottoy.ceo@cloudcompany.cc': lazyTransporter('ceo'),
-  'info@cloudcompany.cc': lazyTransporter('info'),
-  'support@cloudcompany.cc': lazyTransporter('support'),
-  'noreply@cloudcompany.cc': lazyTransporter('noreply'),
-};
+// Mailbox addresses by key: MAIL.info, MAIL.support, MAIL.ceo, MAIL.noreply.
+const MAIL = Object.fromEntries(listMailboxes().map((box) => [box.key, box.address]));
 
-const infoTransporter = transporters['info@cloudcompany.cc'];
+// Keyed by address, e.g. transporters[MAIL.support].
+const transporters = Object.fromEntries(listMailboxes().map((box) => [box.address, lazyTransporter(box.key)]));
 
-module.exports = { transporters, infoTransporter };
+const infoTransporter = transporters[MAIL.info];
+
+module.exports = { transporters, infoTransporter, MAIL };

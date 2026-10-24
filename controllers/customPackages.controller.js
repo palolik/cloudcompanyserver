@@ -1,6 +1,7 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
-const { infoTransporter } = require('../config/mailer');
+const { SERVER_URL } = require('../config/env');
+const { infoTransporter, MAIL } = require('../config/mailer');
 const { sendPushToUsers, profilePath } = require('../services/push.service');
 
 const addCustomPackageRequest = async (req, res) => {
@@ -15,7 +16,7 @@ const addCustomPackageRequest = async (req, res) => {
 
     // Same URL pattern as regular order attachments
     const attachments = (req.files || []).map(file =>
-      `http://localhost:5050/uploads/custom-requests/${file.filename}`
+      `${SERVER_URL}/uploads/custom-requests/${file.filename}`
     );
 
     const request = {
@@ -113,7 +114,7 @@ const updateCustomPackageRequest = async (req, res) => {
       if (order) {
         try {
           await infoTransporter.sendMail({
-            from: '"Cloud Company" <info@cloudcompany.cc>',
+            from: `"Cloud Company" <${MAIL.info}>`,
             to: order.email,
             subject: `Payment Confirmed – ${order.packageName || 'Custom Package'}`,
             html: `
@@ -130,7 +131,7 @@ const updateCustomPackageRequest = async (req, res) => {
                     <tr><td style="padding: 6px 0;"><strong>Order ID</strong></td><td>${id}</td></tr>
                   </table>
                 </div>
-                <p>If you have any questions, feel free to contact us at <a href="mailto:info@cloudcompany.cc">info@cloudcompany.cc</a>.</p>
+                <p>If you have any questions, feel free to contact us at <a href="mailto:${MAIL.info}">${MAIL.info}</a>.</p>
                 <br/>
                 <p style="color: #64748b; font-size: 13px;">Best regards,<br/><strong>Cloud Company Team</strong><br/>cloudcompany.cc</p>
               </div>
