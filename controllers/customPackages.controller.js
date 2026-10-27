@@ -127,7 +127,7 @@ const updateCustomPackageRequest = async (req, res) => {
                   <table style="width: 100%; font-size: 14px; color: #475569; border-collapse: collapse;">
                     <tr><td style="padding: 6px 0;"><strong>Project Title</strong></td><td>${order.projectTitle || 'N/A'}</td></tr>
                     <tr><td style="padding: 6px 0;"><strong>Package</strong></td><td>${order.packageName || 'Custom Package'}</td></tr>
-                    <tr><td style="padding: 6px 0;"><strong>Amount Paid</strong></td><td>${order.packagePrice || order.sellPrice || 'N/A'} USD</td></tr>
+                    <tr><td style="padding: 6px 0;"><strong>Amount Paid</strong></td><td>৳${order.packagePrice || order.sellPrice || 'N/A'} BDT</td></tr>
                     <tr><td style="padding: 6px 0;"><strong>Order ID</strong></td><td>${id}</td></tr>
                   </table>
                 </div>

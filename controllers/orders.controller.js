@@ -275,7 +275,7 @@ const setOrderPaymentStatus = async (req, res) => {
               <table style="width: 100%; font-size: 14px; color: #475569; border-collapse: collapse;">
                 <tr><td style="padding: 6px 0;"><strong>Project Title</strong></td><td>${order.projectTitle}</td></tr>
                 <tr><td style="padding: 6px 0;"><strong>Package</strong></td><td>${order.packageName}</td></tr>
-                <tr><td style="padding: 6px 0;"><strong>Amount Paid</strong></td><td>${order.sellPrice} USD </td></tr>
+                <tr><td style="padding: 6px 0;"><strong>Amount Paid</strong></td><td>৳${order.sellPrice} BDT</td></tr>
                 <tr><td style="padding: 6px 0;"><strong>Order ID</strong></td><td>${orderid}</td></tr>
               </table>
             </div>

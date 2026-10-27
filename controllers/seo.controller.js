@@ -27,7 +27,7 @@ const sitemapXml = async (req, res) => {
   try {
     const { packageCollection, portfolioCollection, blogCollection } = getCollections();
     const [packages, portfolioItems, blogs] = await Promise.all([
-      packageCollection.find({ status: { $ne: 'hidden' } }).toArray(),
+      packageCollection.find({ status: 'approved' }).toArray(),
       portfolioCollection.find({ status: 'visible' }).toArray(),
       blogCollection.find({ status: 'published' }).toArray(),
     ]);
@@ -50,7 +50,7 @@ const sitemapXml = async (req, res) => {
     ];
 
     const packageUrls = packages.map((pkg) => ({
-      url: `/packdetails/${pkg._id}`,
+      url: `/packdetails/${pkg.slug || pkg._id}`,
       priority: '0.8',
       changefreq: 'weekly',
       lastmod: pkg.updatedAt
