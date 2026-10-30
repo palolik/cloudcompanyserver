@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
 const { infoTransporter, MAIL } = require('../config/mailer');
-const { CC_EVENTS_WEBHOOK_SECRET, CC_EVENTS_DASHBOARD_URL } = require('../config/env');
+const { CC_EVENTS_WEBHOOK_SECRET, CC_EVENTS_DASHBOARD_URL, SITE_URL } = require('../config/env');
 const { escapeHtml } = require('../services/notification.service');
 const { sendPushToUsers, profilePath } = require('../services/push.service');
 
@@ -64,24 +64,49 @@ async function findRecipient(externalId) {
   return null;
 }
 
-function renderEmail({ heading, body, link }) {
-  const paragraphs = body.trim().split(/\n{2,}/)
-    .map((p) => `<p style="color:#334155;">${escapeHtml(p).replace(/\n/g, '<br/>')}</p>`)
-    .join('');
+// Absolute link for emails; site paths ("/clientprofile/...") get SITE_URL.
+const emailLink = (url) => safeUrl(url) || (sitePath(url) ? `${SITE_URL.replace(/\/+$/, '')}${url}` : null);
+
+// Standard layout for plain-text rule messages. Blank lines split paragraphs;
+// lines starting with "- " become a list. Table-based for email clients.
+function renderEmail({ heading, body, link, buttonLabel = 'Open Cloud Company' }) {
+  const text = (s) => escapeHtml(s).replace(/\n/g, '<br/>');
+  const blocks = body.trim().split(/\n{2,}/).map((block) => {
+    const lines = block.split('\n');
+    if (lines.every((l) => /^\s*-\s+/.test(l))) {
+      const items = lines.map((l) => `<li style="margin:0 0 6px;">${text(l.replace(/^\s*-\s+/, ''))}</li>`).join('');
+      return `<ul style="margin:0 0 16px;padding-left:20px;color:#334155;font-size:15px;line-height:1.6;">${items}</ul>`;
+    }
+    return `<p style="margin:0 0 16px;color:#334155;font-size:15px;line-height:1.6;">${text(block)}</p>`;
+  }).join('');
   const button = link
-    ? `<p style="margin:24px 0;"><a href="${escapeHtml(link)}" style="background:#2563eb;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;">Open</a></p>`
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 8px;"><tr><td style="background:#0f172a;border-radius:8px;">
+        <a href="${escapeHtml(link)}" style="display:inline-block;padding:11px 20px;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;">${escapeHtml(buttonLabel)}</a>
+      </td></tr></table>`
     : '';
   return `
-    <div style="font-family: Arial, sans-serif; max-width: 620px; margin: auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 10px;">
-      <h2 style="color:#2563eb; margin-top:0;">${escapeHtml(heading)}</h2>
-      ${paragraphs}
-      ${button}
-      <br/>
-      <p style="color:#64748b; font-size:13px;">
-        Best regards,<br/>
-        <strong>Cloud Company Team</strong><br/>
-        cloudcompany.cc
-      </p>
+    <div style="background:#f1f5f9;padding:32px 12px;font-family:Arial,Helvetica,sans-serif;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+        <tr><td style="background:#0f172a;padding:18px 28px;">
+          <span style="color:#ffffff;font-size:17px;font-weight:700;letter-spacing:0.3px;">Cloud Company</span>
+        </td></tr>
+        <tr><td style="padding:28px 28px 12px;">
+          <h1 style="margin:0 0 18px;color:#0f172a;font-size:21px;line-height:1.3;">${escapeHtml(heading)}</h1>
+          ${blocks}
+          ${button}
+        </td></tr>
+        <tr><td style="padding:16px 28px 24px;">
+          <p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">
+            Best regards,<br/><strong style="color:#334155;">Cloud Company Team</strong>
+          </p>
+        </td></tr>
+        <tr><td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:14px 28px;">
+          <p style="margin:0;color:#94a3b8;font-size:12px;line-height:1.5;">
+            You get this email because you have an account at
+            <a href="${escapeHtml(SITE_URL)}" style="color:#1d4ed8;text-decoration:none;">cloudcompany.cc</a>.
+          </p>
+        </td></tr>
+      </table>
     </div>
   `;
 }
@@ -122,7 +147,7 @@ async function deliver(payload = {}) {
   // Rule-authored HTML is sent as is; plain text gets the standard layout.
   const html = typeof content.html === 'string' && content.html.trim()
     ? content.html
-    : renderEmail({ heading: content.title || subject, body: content.body, link: safeUrl(link) || null });
+    : renderEmail({ heading: content.title || subject, body: content.body, link: emailLink(link) });
 
   try {
     await infoTransporter.sendMail({ from, to: user.remail.trim(), subject, text: content.body, html });
@@ -164,4 +189,4 @@ const getDashboardLink = (req, res) => {
   res.json({ success: true, url: CC_EVENTS_DASHBOARD_URL || null });
 };
 
-module.exports = { deliverNotification, getDashboardLink };
+module.exports = { deliverNotification, getDashboardLink, renderEmail };
