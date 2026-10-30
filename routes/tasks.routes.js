@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const requireAdmin = require('../middleware/requireAdmin');
 const {
   getAllTasks,
   getTasks,
@@ -16,6 +17,8 @@ const {
   taskFeedback,
   moreTime,
   addMoreTime,
+  updateTaskStatus,
+  updateTask,
 } = require('../controllers/tasks.controller');
 
 router.get('/alltasks', getAllTasks);
@@ -33,5 +36,7 @@ router.put('/accepttask/:id', acceptTask);
 router.put('/taskfeedback/:id', taskFeedback);
 router.put('/moretime/:id', moreTime);
 router.put('/addmoretime/:id', addMoreTime);
+router.put('/taskstatus/:id', requireAdmin, updateTaskStatus);
+router.put('/task/:id', requireAdmin, updateTask);
 
 module.exports = router;

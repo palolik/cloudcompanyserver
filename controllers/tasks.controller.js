@@ -41,126 +41,141 @@ const getCompletedTasks = async (req, res) => {
   }
 };
 
+// Tell ready employees in the task's department that it's open (push +
+// BCC email). Runs when a task is created, or when a draft is published.
+async function announceNewTask(newPost, taskId) {
+  const { employeeCollection, emailLogCollection } = getCollections();
+
+  const escapeRegex = (value) =>
+    String(value || '')
+      .trim()
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  const matchedEmployees = await employeeCollection.find({
+    rdep: {
+      $regex: `^\\s*${escapeRegex(newPost.rdep)}\\s*$`,
+      $options: 'i',
+    },
+    rsubdep: {
+      $regex: `^\\s*${escapeRegex(newPost.rsubdep)}\\s*$`,
+      $options: 'i',
+    },
+    remail: { $exists: true, $ne: '' },
+    isReady: true,
+
+  }).toArray();
+
+  const employeeEmails = [
+    ...new Set(matchedEmployees.map(emp => emp.remail).filter(Boolean)),
+  ];
+
+  console.log('Task rdep:', newPost.rdep);
+  console.log('Task rsubdep:', newPost.rsubdep);
+  console.log('Matched employees:', matchedEmployees.map(emp => ({
+    name: emp.rname,
+    email: emp.remail,
+    rdep: emp.rdep,
+    rsubdep: emp.rsubdep,
+  })));
+
+  sendPushToUsers(matchedEmployees.map(emp => emp._id.toString()), {
+    title: 'New task available',
+    body: `${newPost.tname || 'A new task'} is open for your department.`,
+    data: { type: 'task', taskId },
+  });
+
+  let emailSent = false;
+  let emailError = null;
+
+  if (employeeEmails.length > 0) {
+    const subject = `New Task Available - ${newPost.tname}`;
+
+    const htmlBody = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 10px;">
+        <h2 style="color:#2563eb;">New Task Available</h2>
+
+        <p>Hello Team,</p>
+        <p>A new task is available for your department.</p>
+
+        <div style="background:#f8fafc; padding:16px; border-radius:8px; margin:20px 0;">
+          <p><strong>Task Name:</strong> ${newPost.tname}</p>
+          <p><strong>Description:</strong> ${newPost.tdesc || 'N/A'}</p>
+          <p><strong>Department:</strong> ${newPost.rdep}</p>
+          <p><strong>Sub Department:</strong> ${newPost.rsubdep}</p>
+          <p><strong>Expertise:</strong> ${newPost.esprts || 'N/A'}</p>
+          <p><strong>Estimated Time:</strong> ${newPost.ttime || 'N/A'}</p>
+          <p><strong>Credit:</strong> ${newPost.tcc || 'N/A'}</p>
+          <p><strong>Task ID:</strong> ${taskId}</p>
+        </div>
+
+        <p>Please login to your employee dashboard and check the task.</p>
+
+        <br/>
+        <p style="color:#64748b; font-size:13px;">
+          Best regards,<br/>
+          <strong>Cloud Company Team</strong><br/>
+          cloudcompany.cc
+        </p>
+      </div>
+    `;
+
+    try {
+      await infoTransporter.sendMail({
+        from: `"Cloud Company" <${MAIL.info}>`,
+        bcc: employeeEmails.join(', '),
+        subject,
+        text: htmlBody.replace(/<[^>]*>/g, ''),
+        html: htmlBody,
+      });
+
+      emailSent = true;
+
+      await emailLogCollection.insertOne({
+        type: 'sent',
+        from: MAIL.info,
+        senderName: 'Cloud Company',
+        to: [],
+        cc: [],
+        bcc: employeeEmails,
+        subject,
+        body: htmlBody,
+        taskId,
+        sentAt: new Date(),
+        read: true,
+      });
+
+    } catch (err) {
+      console.error('Task email send error:', err);
+      emailError = err.message;
+    }
+  }
+
+  return {
+    matchedEmployees: matchedEmployees.length,
+    emailedEmployees: employeeEmails.length,
+    emailSent,
+    emailError,
+  };
+}
+
+// Drafts (tstatus 'draft') can be created with just a name: they stay on the
+// admin board's Backlog, hidden from employees and not announced, until the
+// admin fills them in and moves them to To Do (see updateTaskStatus).
 const addTask = async (req, res) => {
   try {
-    const { tasksCollection, employeeCollection, emailLogCollection } = getCollections();
+    const { tasksCollection } = getCollections();
     const newPost = req.body;
+    if (!String(newPost.tname || '').trim()) return res.status(400).json({ success: false, message: 'Task name is required' });
 
     const result = await tasksCollection.insertOne(newPost);
     const taskId = result.insertedId.toString();
-
-    const escapeRegex = (value) =>
-      String(value || '')
-        .trim()
-        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-    const matchedEmployees = await employeeCollection.find({
-      rdep: {
-        $regex: `^\\s*${escapeRegex(newPost.rdep)}\\s*$`,
-        $options: 'i',
-      },
-      rsubdep: {
-        $regex: `^\\s*${escapeRegex(newPost.rsubdep)}\\s*$`,
-        $options: 'i',
-      },
-      remail: { $exists: true, $ne: '' },
-      isReady: true,
-
-    }).toArray();
-
-    const employeeEmails = [
-      ...new Set(matchedEmployees.map(emp => emp.remail).filter(Boolean)),
-    ];
-
-    console.log('Task rdep:', newPost.rdep);
-    console.log('Task rsubdep:', newPost.rsubdep);
-    console.log('Matched employees:', matchedEmployees.map(emp => ({
-      name: emp.rname,
-      email: emp.remail,
-      rdep: emp.rdep,
-      rsubdep: emp.rsubdep,
-    })));
-
-    sendPushToUsers(matchedEmployees.map(emp => emp._id.toString()), {
-      title: 'New task available',
-      body: `${newPost.tname || 'A new task'} is open for your department.`,
-      data: { type: 'task', taskId },
-    });
-
-    let emailSent = false;
-    let emailError = null;
-
-    if (employeeEmails.length > 0) {
-      const subject = `New Task Available - ${newPost.tname}`;
-
-      const htmlBody = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 10px;">
-          <h2 style="color:#2563eb;">New Task Available</h2>
-
-          <p>Hello Team,</p>
-          <p>A new task is available for your department.</p>
-
-          <div style="background:#f8fafc; padding:16px; border-radius:8px; margin:20px 0;">
-            <p><strong>Task Name:</strong> ${newPost.tname}</p>
-            <p><strong>Description:</strong> ${newPost.tdesc || 'N/A'}</p>
-            <p><strong>Department:</strong> ${newPost.rdep}</p>
-            <p><strong>Sub Department:</strong> ${newPost.rsubdep}</p>
-            <p><strong>Expertise:</strong> ${newPost.esprts || 'N/A'}</p>
-            <p><strong>Estimated Time:</strong> ${newPost.ttime || 'N/A'}</p>
-            <p><strong>Credit:</strong> ${newPost.tcc || 'N/A'}</p>
-            <p><strong>Task ID:</strong> ${taskId}</p>
-          </div>
-
-          <p>Please login to your employee dashboard and check the task.</p>
-
-          <br/>
-          <p style="color:#64748b; font-size:13px;">
-            Best regards,<br/>
-            <strong>Cloud Company Team</strong><br/>
-            cloudcompany.cc
-          </p>
-        </div>
-      `;
-
-      try {
-        await infoTransporter.sendMail({
-          from: `"Cloud Company" <${MAIL.info}>`,
-          bcc: employeeEmails.join(', '),
-          subject,
-          text: htmlBody.replace(/<[^>]*>/g, ''),
-          html: htmlBody,
-        });
-
-        emailSent = true;
-
-        await emailLogCollection.insertOne({
-          type: 'sent',
-          from: MAIL.info,
-          senderName: 'Cloud Company',
-          to: [],
-          cc: [],
-          bcc: employeeEmails,
-          subject,
-          body: htmlBody,
-          taskId,
-          sentAt: new Date(),
-          read: true,
-        });
-
-      } catch (err) {
-        console.error('Task email send error:', err);
-        emailError = err.message;
-      }
-    }
+    const announced = newPost.tstatus === 'draft' ? {} : await announceNewTask(newPost, taskId);
 
     res.status(201).json({
       success: true,
       message: 'Task added successfully',
       insertedId: result.insertedId,
-      matchedEmployees: matchedEmployees.length,
-      emailedEmployees: employeeEmails.length,
-      emailSent,
-      emailError,
+      ...announced,
     });
 
   } catch (error) {
@@ -208,22 +223,24 @@ const getEmployeeCanDoTasks = async (req, res) => {
       $options: 'i',
     });
 
+    // Tasks assigned to this employee always show, whatever their profile
+    // or department says. The open pool (unassigned pending tasks in their
+    // department) needs a ready profile.
     const orConditions = [
-      { tstatus: 'Accepted', taptr: employeeId },
-      { tstatus: 'Completed', taptr: employeeId },
-      { tstatus: 'VerifyTask', taptr: employeeId },
+      { taptr: employeeId, tstatus: { $in: ['pending', 'Accepted', 'VerifyTask', 'Completed'] } },
     ];
 
     if (isReady) {
-      orConditions.unshift({ tstatus: 'pending' });
+      orConditions.push({
+        tstatus: 'pending',
+        taptr: { $in: [null, '', 'NA'] },
+        rdep: exactInsensitive(employee.rdep),
+        rsubdep: exactInsensitive(employee.rsubdep),
+      });
     }
 
     const tasks = await tasksCollection
-      .find({
-        rdep: exactInsensitive(employee.rdep),
-        rsubdep: exactInsensitive(employee.rsubdep),
-        $or: orConditions,
-      })
+      .find({ $or: orConditions })
       .sort({ tmt: -1 })
       .toArray();
 
@@ -343,6 +360,167 @@ const verifyTask = async (req, res) => {
   }
 };
 
+// Admin task board: drag a task to another column. Applies the same side
+// effects as the matching employee/admin step (accept stamps tat, approve
+// activates the follow-up task, etc.).
+const BOARD_STATUSES = ['draft', 'not activated', 'pending', 'Accepted', 'VerifyTask', 'Completed', 'Done'];
+const ASSIGNED_STATUSES = ['Accepted', 'VerifyTask', 'Completed', 'Done'];
+
+const STATUS_PUSH = {
+  pending: (t) => ({ title: 'Task reopened', body: `"${t.tname}" is open again.` }),
+  Accepted: (t, from) => from === 'VerifyTask'
+    ? { title: 'Task needs changes', body: `"${t.tname}" was sent back to you.` }
+    : { title: 'Task moved to in progress', body: `"${t.tname}" is now in progress.` },
+  Completed: (t) => ({ title: 'Task approved', body: `"${t.tname}" was approved.` }),
+  Done: (t) => ({ title: 'Task closed', body: `"${t.tname}" was marked as done.` }),
+};
+
+const REQUIRED_TASK_FIELDS = { tname: 'name', rdep: 'department', rsubdep: 'sub department', ttime: 'time', tcc: 'CC' };
+const missingTaskFields = (task) => Object.entries(REQUIRED_TASK_FIELDS)
+  .filter(([field]) => !String(task[field] ?? '').trim())
+  .map(([, label]) => label);
+
+// Admin edits a task's details. The assignee can only change while nobody has
+// started it (Backlog / To Do); after that, use reassign.
+const EDITABLE_TASK_FIELDS = ['tname', 'tdesc', 'rdep', 'rsubdep', 'esprts', 'ttime', 'tcc', 'tfid'];
+
+const updateTask = async (req, res) => {
+  const { tasksCollection } = getCollections();
+  const id = req.params.id;
+  if (!ObjectId.isValid(id)) return res.status(400).json({ message: 'Invalid task ID' });
+
+  try {
+    const _id = new ObjectId(id);
+    const task = await tasksCollection.findOne({ _id });
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+
+    const $set = {};
+    for (const field of EDITABLE_TASK_FIELDS) {
+      if (req.body[field] !== undefined) $set[field] = typeof req.body[field] === 'string' ? req.body[field].trim() : req.body[field];
+    }
+    if ($set.tname === '') return res.status(400).json({ message: 'Task name is required' });
+
+    if (req.body.taptr !== undefined && req.body.taptr !== task.taptr) {
+      if (!['draft', 'pending'].includes(task.tstatus)) {
+        return res.status(400).json({ message: 'This task is already in progress; use Reassign instead' });
+      }
+      Object.assign($set, {
+        taptr: req.body.taptr || 'NA',
+        apname: req.body.taptr ? req.body.apname || '' : '',
+        apdp: req.body.taptr ? req.body.apdp || '' : '',
+        directAssigned: Boolean(req.body.taptr),
+      });
+    }
+
+    if (task.tstatus !== 'draft') {
+      const missing = missingTaskFields({ ...task, ...$set });
+      if (missing.length) return res.status(400).json({ message: `${missing.join(', ')} can't be empty on a published task` });
+    }
+
+    if (!Object.keys($set).length) return res.json({ message: 'Nothing to update', task });
+    $set.updatedAt = formatDateTime(new Date());
+    await tasksCollection.updateOne({ _id }, { $set });
+
+    // A To Do task newly assigned to someone: tell them.
+    if ($set.taptr && $set.taptr !== 'NA' && task.tstatus === 'pending' && ObjectId.isValid($set.taptr)) {
+      sendPushToUsers($set.taptr, {
+        title: 'Task assigned to you',
+        body: `${$set.tname || task.tname} was assigned to you.`,
+        data: { type: 'task', taskId: id, url: profilePath('employee', $set.taptr) },
+      });
+    }
+
+    res.json({ message: 'Task updated', task: { ...task, ...$set } });
+  } catch (error) {
+    console.error('Error updating task:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+const updateTaskStatus = async (req, res) => {
+  const { tasksCollection } = getCollections();
+  const id = req.params.id;
+  const { status } = req.body;
+
+  if (!ObjectId.isValid(id)) return res.status(400).json({ message: 'Invalid task ID' });
+  if (!BOARD_STATUSES.includes(status)) return res.status(400).json({ message: 'Invalid status' });
+
+  try {
+    const _id = new ObjectId(id);
+    const task = await tasksCollection.findOne({ _id });
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+
+    const from = task.tstatus;
+    if (from === status) return res.json({ message: 'Status unchanged', from, status, task });
+
+    if (from === 'draft' && status !== 'pending') {
+      return res.status(400).json({ message: 'Move a backlog task to To Do first' });
+    }
+    if (status === 'draft' && from !== 'pending') {
+      return res.status(400).json({ message: 'Only To Do tasks can go back to the backlog' });
+    }
+    if (from === 'draft') {
+      const missing = missingTaskFields(task);
+      if (missing.length) return res.status(400).json({ message: `Fill in ${missing.join(', ')} before publishing` });
+    }
+
+    const assigned = task.taptr && ObjectId.isValid(task.taptr);
+    if (ASSIGNED_STATUSES.includes(status) && !assigned) {
+      return res.status(400).json({ message: 'Assign the task to an employee first' });
+    }
+
+    const now = formatDateTime(new Date());
+    const $set = { tstatus: status, statusChangedAt: now };
+    if (status === 'Accepted') {
+      if (!task.tat || task.tat === 'NA' || from === 'pending') $set.tat = now;
+      $set.timeranout = false;
+    }
+    if (status === 'VerifyTask') $set.submittedAt = now;
+    if (from === 'VerifyTask' && status === 'Accepted') Object.assign($set, { verifiedAt: now, verifyResult: 'reject' });
+    if (status === 'Completed') Object.assign($set, { verifiedAt: now, verifyResult: 'approve', completedAt: task.completedAt || now });
+    if (status === 'pending') $set.timeranout = false;
+
+    // Only move it if nobody else did meanwhile.
+    const result = await tasksCollection.updateOne({ _id, tstatus: from }, { $set });
+    if (result.matchedCount === 0) return res.status(409).json({ message: 'Task changed meanwhile, refresh and try again' });
+
+    let nextActivatedTaskId = null;
+    if (status === 'Completed') {
+      const next = await tasksCollection.findOneAndUpdate(
+        { tfid: id, tstatus: 'not activated' },
+        { $set: { tstatus: 'pending', activatedAt: now } },
+      );
+      nextActivatedTaskId = next?._id || null;
+    }
+
+    // Publishing a draft announces it like a newly created task.
+    if (from === 'draft') {
+      if (assigned) {
+        sendPushToUsers(task.taptr, {
+          title: 'Task assigned to you',
+          body: `${task.tname} was assigned to you.`,
+          data: { type: 'task', taskId: id, url: profilePath('employee', task.taptr) },
+        });
+      } else {
+        announceNewTask({ ...task, ...$set }, id).catch((err) => console.error('Task announce failed:', err.message));
+      }
+    }
+
+    const push = from !== 'draft' && assigned && STATUS_PUSH[status]?.(task, from);
+    if (push) {
+      sendPushToUsers(task.taptr, {
+        ...push,
+        data: { type: 'task', taskId: id, url: profilePath('employee', task.taptr) },
+      });
+    }
+
+    res.json({ message: 'Status updated', from, status, nextActivatedTaskId, task: { ...task, ...$set } });
+  } catch (error) {
+    console.error('Error updating task status:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
 // 1. Employee timer expires → mark timeranout
 const timeRanOut = async (req, res) => {
   const { tasksCollection } = getCollections();
@@ -434,16 +612,18 @@ const acceptTask = async (req, res) => {
   const { taptr, apname,
     apdp, tdt } = req.body;
 
-  if (!taptr || !apname || !apdp) {
-    return res.status(400).json({ message: 'Missing required fields (taptr or tdt)' });
-  }
+  // Name and picture are optional so employees with unfinished profiles can
+  // still take tasks assigned to them.
+  if (!ObjectId.isValid(id)) return res.status(400).json({ message: 'Invalid task ID' });
+  if (!taptr) return res.status(400).json({ message: 'Missing employee ID (taptr)' });
 
-  const filter = { _id: new ObjectId(id), tstatus: 'pending' };
+  // A task assigned to someone else can't be taken.
+  const filter = { _id: new ObjectId(id), tstatus: 'pending', taptr: { $in: [taptr, null, '', 'NA'] } };
   const update = {
     $set: {
       taptr,
-      apname,
-      apdp,
+      apname: apname || '',
+      apdp: apdp || '',
       tstatus: 'Accepted',
       tat: formatDateTime(new Date()),
     }
@@ -572,4 +752,6 @@ module.exports = {
   taskFeedback,
   moreTime,
   addMoreTime,
+  updateTaskStatus,
+  updateTask,
 };

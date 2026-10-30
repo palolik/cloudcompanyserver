@@ -89,19 +89,22 @@ async function handle(req, res) {
   if (properties === null) return;
 
   const externalId = resolveExternalId(req, rule, body);
+  const isAdmin = externalId === 'admin';
   const base = { actorType: rule.actor, route: `${req.method} ${req.route.path}` };
   const context = contextFromRequest(req);
 
   const profile = rule.identify?.(req, body);
   if (profile?.externalId) identify({ externalId: profile.externalId, traits: dropUndefined(profile.traits || {}) });
 
-  trackEvent({ externalId, event: rule.event, properties: dropUndefined({ ...base, ...properties }), context });
+  // Only users' own actions are events; admin actions count solely through
+  // the extras they cause for a client or employee.
+  if (!isAdmin) trackEvent({ externalId, event: rule.event, properties: dropUndefined({ ...base, ...properties }), context });
 
   // Extra events are about someone else (e.g. the client whose order an
   // admin updated) and carry their own externalId/actorType.
   const extras = rule.extra ? await rule.extra(req, body) : [];
   for (const extra of extras) {
-    if (!extra?.event) continue;
+    if (!extra?.event || (isAdmin && !extra.externalId)) continue;
     trackEvent({
       externalId: extra.externalId ? String(extra.externalId) : externalId,
       event: extra.event,
@@ -114,7 +117,7 @@ async function handle(req, res) {
 // Rules with onFailure also record rejected requests (4xx), e.g. failed logins.
 function handleFailure(req, res) {
   const rule = ruleFor(req);
-  if (!rule?.onFailure || res.statusCode < 400 || res.statusCode >= 500) return;
+  if (!rule?.onFailure || rule.actor === 'admin' || res.statusCode < 400 || res.statusCode >= 500) return;
   const body = responseBody(res);
   trackEvent({
     externalId: recallVisitor(req) || req.get('x-device-id') || `anon:${contextFromRequest(req).ip}`,

@@ -350,7 +350,7 @@ const incrementVisitorCount = async (req, res) => {
       { $inc: { count: req.body.increment || 1 } },
       { upsert: true, returnDocument: 'after' }
     );
-
+    res.json({ success: true, count: result?.count });
   } catch (error) {
     console.error('Error updating visitor count:', error);
     res.status(500).json({ error: 'Internal server error' });

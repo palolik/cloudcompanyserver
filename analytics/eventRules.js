@@ -15,7 +15,8 @@
 //   onFailure     { event, props? } also sent for 4xx responses
 //
 // externalIds are client and employee _ids, so CC Events notification rules
-// can reach them through POST /events/deliver. Admins are "admin".
+// can reach them through POST /events/deliver. Admin actions are not tracked
+// themselves (tracker.js drops them); admin rules exist only for their extras.
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
 
@@ -105,11 +106,6 @@ module.exports = {
     onFailure: { event: 'login_failed', props: () => ({ userType: 'employee' }) },
     identify: (req, body) => body.user && { externalId: body.user.id, traits: employeeTraits(body.user) },
     props: (req, body) => ({ userType: 'employee', role: body.user?.role }),
-  },
-  'POST /adminlogin': {
-    event: 'admin_logged_in',
-    actor: 'admin',
-    onFailure: { event: 'admin_login_failed' },
   },
   'POST /addclient': {
     event: 'client_registered',
@@ -242,13 +238,6 @@ module.exports = {
   'POST /addschat': chatRule('chat_message_sent', { chatType: 'support', userIdField: 'bId', roomField: 'supportId', recipientType: 'client' }),
 
   // ── Tasks ──
-  'POST /addtask': adminEvent('task_created', (req, body) => ({
-    taskId: body.insertedId,
-    taskName: req.body.tname,
-    department: req.body.rdep,
-    subDepartment: req.body.rsubdep,
-    credit: req.body.tcc,
-  })),
   'PUT /accepttask/:id': {
     event: 'task_accepted',
     actor: 'employee',
@@ -294,6 +283,17 @@ module.exports = {
       }];
     },
   },
+  'PUT /taskstatus/:id': {
+    ...adminEvent('task_status_changed', (req, body) => ({ taskId: req.params.id, from: body.from, status: body.status })),
+    extra: async (req, body) => {
+      const employeeId = body.task?.taptr;
+      if (!ObjectId.isValid(employeeId) || body.from === body.status) return [];
+      const properties = { taskId: req.params.id, taskName: body.task.tname, from: body.from, status: body.status };
+      if (body.status === 'Completed') return [{ event: 'task_approved', externalId: employeeId, actorType: 'employee', properties: { ...properties, credit: body.task.tcc } }];
+      if (body.from === 'VerifyTask' && body.status === 'Accepted') return [{ event: 'task_rejected', externalId: employeeId, actorType: 'employee', properties }];
+      return [{ event: 'task_status_changed', externalId: employeeId, actorType: 'employee', properties }];
+    },
+  },
   'PUT /timeranout/:id': {
     event: 'task_time_ran_out',
     actor: 'employee',
@@ -321,6 +321,7 @@ module.exports = {
   'POST /replycomment/:commentId': publicEvent('comment_replied', (req) => ({ commentId: req.params.commentId })),
 
   // ── Other ──
+  'POST /vcount': publicEvent('website_visited'),
   'POST /applyjob': publicEvent('job_applied', (req) => ({ jobId: req.body.jobid, jobTitle: req.body.jobTitle })),
   'POST /submitanswers': publicEvent('planner_submitted', (req) => ({ formId: req.body.formId })),
   'GET /blogdetails/:slug': publicEvent('blog_viewed', (req) => ({ slug: req.params.slug })),
