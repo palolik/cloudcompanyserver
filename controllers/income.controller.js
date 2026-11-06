@@ -9,6 +9,8 @@ const getIncome = async (req, res) => {
       {
         projection: {
           sellPrice: 1,
+          currency: 1,
+          quotedPrice: 1,
           buyerid: 1,
           buyername: 1,
           email: 1,

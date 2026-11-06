@@ -1,5 +1,7 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
+const { USD_BDT_RATE } = require('../config/env');
+const { countryFromRequest } = require('../utils/geo');
 
 // ObjectId.isValid() accepts any 12-char string, so a slug like "logo-design1"
 // would pass it — match the 24-hex form explicitly instead.
@@ -268,7 +270,21 @@ const getPackageDetails = async (req, res) => {
   }
 };
 
+// Which currency the visitor should see prices in. Prices are stored in BDT;
+// the site converts them to USD for visitors outside Bangladesh. `currency` is
+// null when the country is unknown, and the site then decides from the browser's time zone.
+const getPricingLocale = async (req, res) => {
+  const country = await countryFromRequest(req);
+  res.set('Cache-Control', 'private, max-age=3600');
+  res.json({
+    country,
+    currency: country ? (country === 'BD' ? 'BDT' : 'USD') : null,
+    usdRate: USD_BDT_RATE,
+  });
+};
+
 module.exports = {
+  getPricingLocale,
   getPackages,
   getHomeClients,
   addPackage,

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { uploadPackageCover } = require('../config/multer');
 const {
+  getPricingLocale,
   getPackages,
   getHomeClients,
   addPackage,
@@ -14,6 +15,7 @@ const {
   getPackageDetails,
 } = require('../controllers/packages.controller');
 
+router.get('/pricing/locale', getPricingLocale);
 router.get('/packages', getPackages);
 router.get('/homeclients', getHomeClients);
 router.post('/addpackages', uploadPackageCover.single('packageCover'), addPackage);

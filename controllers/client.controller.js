@@ -99,6 +99,9 @@ const getAllClients = async (req, res) => {
           packageId: order.packageId,
           projectTitle: order.projectTitle,
           sellPrice: order.sellPrice,
+          currency: order.currency,
+          quotedPrice: order.quotedPrice,
+          status: order.status,
         })),
       };
     });

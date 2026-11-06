@@ -6,7 +6,7 @@ const { sendPushToUsers, profilePath } = require('../services/push.service');
 
 const buyPackage = async (req, res) => {
   const { PsoldCollection } = getCollections();
-  const { packageId, projectTitle, projectBrief, packageName, sellPrice, buyerid, packageContents, buyername, email, coupon, time, bdp } = req.body;
+  const { packageId, projectTitle, projectBrief, packageName, sellPrice, buyerid, packageContents, buyername, email, coupon, time, bdp, currency, quotedPrice } = req.body;
   const parsedPackageContents = packageContents ? JSON.parse(packageContents) : [];
 
   const attachments = req.files ? req.files.map((file) => file.path) : [];
@@ -17,6 +17,9 @@ const buyPackage = async (req, res) => {
     projectBrief,
     packageName,
     sellPrice,
+    // Currency/amount the buyer saw at checkout; sellPrice is always BDT.
+    currency: currency === 'USD' ? 'USD' : 'BDT',
+    quotedPrice: Number(quotedPrice) || Number(sellPrice) || 0,
     buyerid,
     packageContents: parsedPackageContents,
     coupon,

@@ -46,6 +46,10 @@ const CC_EVENTS_WEBHOOK_SECRET = process.env.CC_EVENTS_WEBHOOK_SECRET || '';
 // Read-only CC Events dashboard link shown in CCAdmin.
 const CC_EVENTS_DASHBOARD_URL = process.env.CC_EVENTS_DASHBOARD_URL || '';
 
+// BDT per 1 USD. Visitors outside Bangladesh see package prices converted at
+// this rate and rounded up to the next whole dollar.
+const USD_BDT_RATE = Number(process.env.USD_BDT_RATE) || 122;
+
 // Firebase Cloud Messaging (project "cloudcompany-dbc36"). Path to the
 // service-account JSON (relative to the project root), or the JSON itself in
 // FIREBASE_SERVICE_ACCOUNT. Unset = push is a silent no-op.
@@ -69,6 +73,7 @@ module.exports = {
   CC_EVENTS_API_SECRET,
   CC_EVENTS_WEBHOOK_SECRET,
   CC_EVENTS_DASHBOARD_URL,
+  USD_BDT_RATE,
   FIREBASE_SERVICE_ACCOUNT_PATH,
   FIREBASE_SERVICE_ACCOUNT,
 };
