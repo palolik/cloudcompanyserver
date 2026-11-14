@@ -20,6 +20,9 @@ const SLOTS = [
   { location: 'hrs', label: 'Home right sidebar', width: 160, height: 600 },
   { location: 'Sidebar', label: 'Both home sidebars', width: 160, height: 600 },
   { location: 'Popup', label: 'Popup', width: 600, height: 600 },
+  { location: 'bls', label: 'Blog left sidebar', width: 160, height: 600 },
+  { location: 'brs', label: 'Blog right sidebar', width: 160, height: 600 },
+  { location: 'Blog Sidebar', label: 'Both blog sidebars', width: 160, height: 600 },
 ];
 
 const REDIRECT = 'https://cloudcompany.cc';

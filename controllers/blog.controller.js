@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
 const { createSlug } = require('../services/slug.service');
@@ -203,6 +204,30 @@ const getBlogDetailsAdminBySlug = async (req, res) => {
   }
 };
 
+// The stored jsxFilePath is the disk path on whichever server received the upload, so a
+// local server sharing the production DB won't find it. Try that path, then the same file
+// name in this server's uploads folder, then download it from the stored public URL.
+const readBlogJsx = async (blog) => {
+  const fileName = blog.jsxFilePath ? blog.jsxFilePath.split(/[\\/]/).pop() : null;
+  const candidates = [
+    blog.jsxFilePath,
+    fileName && path.join(__dirname, '..', 'uploads', 'blogs', 'jsx', fileName),
+  ].filter(Boolean);
+
+  const local = candidates.find((p) => fs.existsSync(p));
+  if (local) return fs.readFileSync(local, 'utf8');
+
+  if (!blog.jsxFile) return null;
+  try {
+    const url = blog.jsxFile.replace(/^http:\/\//i, 'https://');
+    const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    return response.ok ? await response.text() : null;
+  } catch (err) {
+    console.error(`Blog JSX download failed for ${blog.slug}:`, err.message);
+    return null;
+  }
+};
+
 const getBlogJsxBySlug = async (req, res) => {
   try {
     const { blogCollection } = getCollections();
@@ -220,21 +245,20 @@ const getBlogJsxBySlug = async (req, res) => {
       });
     }
 
-    if (!blog.jsxFilePath) {
+    if (!blog.jsxFilePath && !blog.jsxFile) {
       return res.status(404).send({
         success: false,
         message: 'JSX file path not found',
       });
     }
 
-    if (!fs.existsSync(blog.jsxFilePath)) {
+    const jsxCode = await readBlogJsx(blog);
+    if (jsxCode === null) {
       return res.status(404).send({
         success: false,
         message: 'JSX file not found on server',
       });
     }
-
-    const jsxCode = fs.readFileSync(blog.jsxFilePath, 'utf8');
 
     res.type('text/plain');
     res.send(jsxCode);
