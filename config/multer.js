@@ -230,6 +230,36 @@ const customUpload = multer({
   }),
 });
 
+// ── Generic admin image uploads (logos, banners, team pics, ads…) ──
+const IMAGE_MIMES = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/avif',
+];
+const uploadImage = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join(projectRoot, 'uploads', 'images');
+      fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+      const cleanName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+      cb(null, `${Date.now()}-${cleanName}`);
+    },
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!IMAGE_MIMES.includes(file.mimetype)) {
+      return cb(new Error('Only JPG, PNG, WEBP, GIF and AVIF images are allowed'), false);
+    }
+    cb(null, true);
+  },
+});
+
 // Every uploader is wrapped so uploaded raster images are optimised and stored as webp.
 module.exports = {
   upload: withWebp(upload),
@@ -244,4 +274,5 @@ module.exports = {
   uploadechatfile: withWebp(uploadechatfile),
   geteFileUrl,
   customUpload: withWebp(customUpload),
+  uploadImage: withWebp(uploadImage),
 };

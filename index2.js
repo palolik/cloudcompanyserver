@@ -43,6 +43,7 @@ const teamRoutes = require('./routes/team.routes');
 const categoryRoutes = require('./routes/category.routes');
 const advertiseRoutes = require('./routes/advertise.routes');
 const employeeRoutes = require('./routes/employee.routes');
+const uploadRoutes = require('./routes/upload.routes');
 
 // ── Batch B: routes registered AFTER stampActivity in the original file ──
 // (client-ping/adminlogin through planner — these DO get lastActive stamped)
@@ -111,6 +112,7 @@ app.use(teamRoutes);
 app.use(categoryRoutes);
 app.use(advertiseRoutes);
 app.use(employeeRoutes);
+app.use(uploadRoutes);
 
 // This exact placement (mid-way through route registration) is preserved
 // on purpose — see middleware/stampActivity.js for why.
