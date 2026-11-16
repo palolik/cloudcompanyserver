@@ -6,7 +6,12 @@
 //
 // Tokens are FCM registration tokens from CCUser (getToken() with the VAPID
 // key), one row per device in `devicetokens`. userId is the client or
-// employee _id as a string; userType is 'client' or 'employee'.
+// employee _id as a string; userType is 'client', 'employee' or 'admin'.
+//
+// Every token is also subscribed to FCM topics: 'public' (everyone) and one
+// per user type ('clients', 'employees', 'admins'), so broadcasts go out as
+// one topic message instead of a token scan. The mobile app subscribes to
+// 'public' itself while signed out.
 //
 // Every send is fire-and-forget: it never throws. Failures are only logged.
 
@@ -23,7 +28,12 @@ const DEAD_TOKEN_CODES = new Set([
   'messaging/invalid-registration-token',
 ]);
 const PLATFORMS = ['web', 'android', 'ios'];
-const USER_TYPES = ['client', 'employee'];
+const USER_TYPES = ['client', 'employee', 'admin'];
+
+// FCM topic per audience. 'public' reaches everyone, signed in or not.
+const TOPICS = { public: 'public', clients: 'clients', employees: 'employees', admins: 'admins' };
+const ROLE_TOPICS = [TOPICS.clients, TOPICS.employees, TOPICS.admins];
+const topicFor = (userType) => `${userType}s`;
 const MAX_TOKEN_LENGTH = 4096;
 
 let messaging;
@@ -91,12 +101,30 @@ async function registerDeviceToken({ userId, userType, role, token, platform }) 
     { $set: { userId: String(userId), userType, role: role || null, platform, updatedAt: now }, $setOnInsert: { createdAt: now } },
     { upsert: true }
   );
+  syncTopics(token, userType);
 }
 
-// Forget a device's token (logout).
+// Forget a device's token (logout). It stays on 'public' so a signed-out
+// device still gets public announcements.
 async function removeDeviceToken(token) {
   const { deviceTokenCollection } = getCollections();
   await deviceTokenCollection.deleteOne({ token });
+  syncTopics(token, null);
+}
+
+// Put a token on 'public' plus its user type's topic, and off the others.
+// Fire-and-forget like every other FCM call here.
+async function syncTopics(token, userType) {
+  const fcm = getMessaging();
+  if (!fcm) return;
+  try {
+    const keep = userType ? topicFor(userType) : null;
+    await fcm.subscribeToTopic(token, TOPICS.public);
+    if (keep) await fcm.subscribeToTopic(token, keep);
+    await Promise.all(ROLE_TOPICS.filter((t) => t !== keep).map((t) => fcm.unsubscribeFromTopic(token, t)));
+  } catch (err) {
+    console.error('Topic sync failed:', err.message);
+  }
 }
 
 // FCM data values must be strings.
@@ -121,22 +149,11 @@ async function sendPushToUsers(userIds, { title, body, data = {} } = {}) {
     const { deviceTokenCollection } = getCollections();
     const devices = await deviceTokenCollection.find({ userId: { $in: ids } }, { projection: { token: 1 } }).toArray();
     const tokens = devices.map((d) => d.token);
-    const link = webAppUrl(data.url);
     let sent = 0;
 
     for (let i = 0; i < tokens.length; i += MAX_TOKENS_PER_SEND) {
       const batch = tokens.slice(i, i + MAX_TOKENS_PER_SEND);
-      const res = await fcm.sendEachForMulticast({
-        tokens: batch,
-        notification: { title, body },
-        data: stringifyData(data),
-        webpush: {
-          notification: { icon: webAppUrl('/assets/febicon.svg') },
-          ...(link.startsWith('https://') ? { fcmOptions: { link } } : {}),
-        },
-        android: { priority: 'high', notification: { sound: 'default' } },
-        apns: { payload: { aps: { sound: 'default' } } },
-      });
+      const res = await fcm.sendEachForMulticast({ tokens: batch, ...messageOptions({ title, body, data }) });
       sent += res.successCount;
 
       const dead = batch.filter((_, idx) => DEAD_TOKEN_CODES.has(res.responses[idx].error?.code));
@@ -149,7 +166,40 @@ async function sendPushToUsers(userIds, { title, body, data = {} } = {}) {
   }
 }
 
+// Shared FCM message options for every platform.
+function messageOptions({ title, body, data = {} }) {
+  const link = webAppUrl(data.url);
+  return {
+    notification: { title, body },
+    data: stringifyData(data),
+    webpush: {
+      notification: { icon: webAppUrl('/assets/febicon.svg') },
+      ...(link.startsWith('https://') ? { fcmOptions: { link } } : {}),
+    },
+    android: { priority: 'high', notification: { sound: 'default', channelId: 'cloudcompany_default' } },
+    apns: { payload: { aps: { sound: 'default' } } },
+  };
+}
+
+/**
+ * Push to everyone on an FCM topic ('public', 'clients', 'employees',
+ * 'admins'). Always resolves; returns true when FCM accepted the message.
+ */
+async function sendPushToTopic(topic, message = {}) {
+  try {
+    const fcm = getMessaging();
+    if (!fcm || !Object.values(TOPICS).includes(topic)) return false;
+    await fcm.send({ topic, ...messageOptions(message) });
+    return true;
+  } catch (err) {
+    console.error('Topic push failed:', err.message);
+    return false;
+  }
+}
+
 module.exports = {
+  TOPICS,
+  sendPushToTopic,
   getMessaging,
   profilePath,
   validateDeviceToken,

@@ -2,7 +2,8 @@ const { ObjectId } = require('mongodb');
 const { infoTransporter, MAIL } = require('../config/mailer');
 const { getCollections } = require('../config/db');
 const { isUserOnline } = require('../sockets/registry');
-const { sendPushToUsers, profilePath } = require('./push.service');
+const { profilePath } = require('./push.service');
+const { notifyUsers } = require('./inbox.service');
 
 function escapeHtml(value) {
   return String(value || '')
@@ -81,6 +82,39 @@ async function getRecipientInfo(recipientType, recipientId, roomId) {
   return null;
 }
 
+// 'order' (client ↔ admin), 'task' (employee ↔ admin) or 'support'.
+const chatKindOf = (message) => (message.taskId ? 'task' : message.orderId ? 'order' : 'support');
+
+// A client or employee wrote in an order/task chat: tell every admin who
+// isn't in that room right now. One collapsing entry per room.
+async function notifyAdminsOfChat(roomId, message) {
+  try {
+    if (!roomId || message.sender === 'manager') return;
+    const { rolesCollection } = getCollections();
+    const admins = await rolesCollection.find({}, { projection: { _id: 1 } }).toArray();
+    const ids = admins.map((a) => a._id.toString()).filter((id) => !isUserOnline(roomId, id));
+    if (!ids.length) return;
+
+    const kind = chatKindOf(message);
+    const name = message.bName || message.empName || 'Someone';
+    await notifyUsers(ids, {
+      userType: 'admin',
+      type: 'chat',
+      title: kind === 'task' ? `${name} (task chat)` : kind === 'order' ? `${name} (project chat)` : `${name} (support)`,
+      body: getMessagePreview(message),
+      collapseKey: `chat:${roomId}`,
+      data: {
+        chatKind: kind,
+        roomId,
+        participantId: message.bId || message.empId,
+        participantName: name,
+      },
+    });
+  } catch (err) {
+    console.error('Admin chat notify error:', err.message);
+  }
+}
+
 async function notifyIfOffline(roomId, recipientId, message, recipientType = 'client') {
   try {
     // Only manager messages should send email
@@ -95,10 +129,19 @@ async function notifyIfOffline(roomId, recipientId, message, recipientType = 'cl
     const { emailLogCollection } = getCollections();
     const preview = getMessagePreview(message);
 
-    sendPushToUsers(recipientId, {
+    notifyUsers(recipientId, {
+      userType: recipientType,
+      type: 'chat',
       title: 'New message from Cloud Company',
       body: preview,
-      data: { type: 'chat', roomId, url: profilePath(recipientType, recipientId) },
+      collapseKey: `chat:${roomId}`,
+      data: {
+        chatKind: chatKindOf(message),
+        roomId,
+        participantId: recipientId,
+        participantName: message.bName || message.empName,
+        url: profilePath(recipientType, recipientId),
+      },
     });
 
     // Duplicate protection
@@ -258,5 +301,6 @@ module.exports = {
   getMessagePreview,
   getRecipientInfo,
   notifyIfOffline,
+  notifyAdminsOfChat,
   notifyCeoOfSupportMessage,
 };

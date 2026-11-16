@@ -17,6 +17,7 @@ const eventTracking = require('./analytics/tracker');
 // (blog through employee CRUD — none of these get their lastActive stamped)
 const blogRoutes = require('./routes/blog.routes');
 const pushRoutes = require('./routes/push.routes');
+const notificationsRoutes = require('./routes/notifications.routes');
 const eventsRoutes = require('./routes/events.routes');
 const authRoutes = require('./routes/auth.routes');
 const mailRoutes = require('./routes/mail.routes');
@@ -86,6 +87,7 @@ app.use(eventTracking);
 // ── Batch A (unstamped) ──
 app.use(blogRoutes);
 app.use(pushRoutes);
+app.use(notificationsRoutes);
 app.use(eventsRoutes);
 app.use(authRoutes);
 app.use(mailRoutes);

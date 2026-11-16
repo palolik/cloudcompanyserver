@@ -4,7 +4,8 @@ const { getCollections } = require('../config/db');
 const { infoTransporter, MAIL } = require('../config/mailer');
 const { CC_EVENTS_WEBHOOK_SECRET, CC_EVENTS_DASHBOARD_URL, SITE_URL } = require('../config/env');
 const { escapeHtml } = require('../services/notification.service');
-const { sendPushToUsers, profilePath } = require('../services/push.service');
+const { profilePath } = require('../services/push.service');
+const { notifyUsers } = require('../services/inbox.service');
 
 // CC Events delivery webhook. When a notification rule fires, CC Events
 // renders the personalised message and POSTs it here, HMAC-signed with
@@ -125,7 +126,9 @@ async function deliver(payload = {}) {
   const link = safeUrl(content.url) || sitePath(content.url) || profilePath(user.userType, userId, user.role);
 
   if (channel === 'push') {
-    const sent = await sendPushToUsers(userId, {
+    const sent = await notifyUsers(userId, {
+      userType: user.userType,
+      type: 'campaign',
       title: content.title || content.subject || 'Cloud Company',
       body: content.body,
       data: {

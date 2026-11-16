@@ -2,7 +2,8 @@ const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
 const { SERVER_URL } = require('../config/env');
 const { infoTransporter, MAIL } = require('../config/mailer');
-const { sendPushToUsers, profilePath } = require('../services/push.service');
+const { profilePath } = require('../services/push.service');
+const { notifyUsers } = require('../services/inbox.service');
 
 const addCustomPackageRequest = async (req, res) => {
   try {
@@ -100,7 +101,8 @@ const updateCustomPackageRequest = async (req, res) => {
           : updates.status === 'started'
             ? { title: 'Work has started', body: `Our team started working on "${name}".` }
             : { title: 'Project completed', body: `"${name}" is completed.` };
-        sendPushToUsers(request.buyerid, {
+        notifyUsers(request.buyerid, {
+          userType: 'client',
           ...push,
           data: { type: 'order', orderId: id, url: profilePath('client', request.buyerid) },
         });

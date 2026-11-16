@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 const { getCollections } = require('../config/db');
 const { clients, broadcastMessage } = require('./registry');
-const { notifyIfOffline, notifyCeoOfSupportMessage } = require('../services/notification.service');
+const { notifyIfOffline, notifyCeoOfSupportMessage, notifyAdminsOfChat } = require('../services/notification.service');
 const { trackEvent } = require('../utils/ccEvents');
 
 // Same events as the REST chat routes (analytics/eventRules.js chatRule).
@@ -79,6 +79,7 @@ wss.on('connection', (ws, req) => {
           // Notify the employee if offline (sender is manager, recipient is empId)
           trackChatMessage('employee', msg.taskId, msg.empId, 'employee', newMessage);
           await notifyIfOffline(msg.taskId, msg.empId, newMessage, 'employee');
+          await notifyAdminsOfChat(msg.taskId, newMessage);
         }
 
       } else if (msg.orderId) {
@@ -95,6 +96,7 @@ wss.on('connection', (ws, req) => {
           // Notify the client if offline
           trackChatMessage('client', msg.orderId, msg.bId, 'client', newMessage);
           await notifyIfOffline(msg.orderId, msg.bId, newMessage, 'client');
+          await notifyAdminsOfChat(msg.orderId, newMessage);
         }
 
       } else if (msg.supportId) {

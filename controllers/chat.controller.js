@@ -1,7 +1,7 @@
 const { getCollections } = require('../config/db');
 const { getFileUrl, geteFileUrl } = require('../config/multer');
 const { broadcastMessage } = require('../sockets/registry');
-const { notifyIfOffline, notifyCeoOfSupportMessage } = require('../services/notification.service');
+const { notifyIfOffline, notifyCeoOfSupportMessage, notifyAdminsOfChat } = require('../services/notification.service');
 
 const addClientChatFiles = async (req, res) => {
   const { clientchatCollection } = getCollections();
@@ -42,6 +42,8 @@ const addClientChatFiles = async (req, res) => {
 
       if (newMessage.sender === 'manager') {
         await notifyIfOffline(orderId, bId, newMessage, 'client');
+      } else {
+        await notifyAdminsOfChat(orderId, newMessage);
       }
     }, 0);
 
@@ -90,6 +92,8 @@ const addEmployeeChatFiles = async (req, res) => {
 
       if (newMessage.sender === 'manager') {
         await notifyIfOffline(taskId, empId, newMessage, 'employee');
+      } else {
+        await notifyAdminsOfChat(taskId, newMessage);
       }
     }, 0);
 
@@ -144,6 +148,8 @@ const addEmployeeChat = async (req, res) => {
 
       if (newMessage.sender === 'manager') {
         await notifyIfOffline(taskId, empId, newMessage, 'employee');
+      } else {
+        await notifyAdminsOfChat(taskId, newMessage);
       }
     }, 0);
   } catch (error) {
@@ -193,6 +199,8 @@ const addClientChat = async (req, res) => {
 
       if (newMessage.sender === 'manager') {
         await notifyIfOffline(orderId, bId, newMessage, 'client');
+      } else {
+        await notifyAdminsOfChat(orderId, newMessage);
       }
     }, 0);
 

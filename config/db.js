@@ -53,6 +53,7 @@ async function connectDB() {
     deviceTokenCollection: db.collection('devicetokens'),
     passwordOtpCollection: db.collection('passwordOtps'),
     blogCollection: db.collection('blogs'),
+    notificationCollection: db.collection('notifications'),
   };
 
   return collections;

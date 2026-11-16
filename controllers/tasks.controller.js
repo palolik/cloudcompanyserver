@@ -1,7 +1,8 @@
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
 const { infoTransporter, MAIL } = require('../config/mailer');
-const { sendPushToUsers, profilePath } = require('../services/push.service');
+const { profilePath } = require('../services/push.service');
+const { notifyUsers } = require('../services/inbox.service');
 const { formatDateTime } = require('../utils/time');
 
 const getAllTasks = async (req, res) => {
@@ -78,7 +79,8 @@ async function announceNewTask(newPost, taskId) {
     rsubdep: emp.rsubdep,
   })));
 
-  sendPushToUsers(matchedEmployees.map(emp => emp._id.toString()), {
+  notifyUsers(matchedEmployees.map(emp => emp._id.toString()), {
+    userType: 'employee',
     title: 'New task available',
     body: `${newPost.tname || 'A new task'} is open for your department.`,
     data: { type: 'task', taskId },
@@ -328,7 +330,8 @@ const verifyTask = async (req, res) => {
 
     const verifiedTask = await tasksCollection.findOne({ _id: new ObjectId(id) });
     if (verifiedTask?.taptr && ObjectId.isValid(verifiedTask.taptr)) {
-      sendPushToUsers(verifiedTask.taptr, {
+      notifyUsers(verifiedTask.taptr, {
+        userType: 'employee',
         title: action === 'approve' ? 'Task approved' : 'Task needs changes',
         body: action === 'approve'
           ? `"${verifiedTask.tname}" was approved.`
@@ -423,7 +426,8 @@ const updateTask = async (req, res) => {
 
     // A To Do task newly assigned to someone: tell them.
     if ($set.taptr && $set.taptr !== 'NA' && task.tstatus === 'pending' && ObjectId.isValid($set.taptr)) {
-      sendPushToUsers($set.taptr, {
+      notifyUsers($set.taptr, {
+        userType: 'employee',
         title: 'Task assigned to you',
         body: `${$set.tname || task.tname} was assigned to you.`,
         data: { type: 'task', taskId: id, url: profilePath('employee', $set.taptr) },
@@ -496,7 +500,8 @@ const updateTaskStatus = async (req, res) => {
     // Publishing a draft announces it like a newly created task.
     if (from === 'draft') {
       if (assigned) {
-        sendPushToUsers(task.taptr, {
+        notifyUsers(task.taptr, {
+          userType: 'employee',
           title: 'Task assigned to you',
           body: `${task.tname} was assigned to you.`,
           data: { type: 'task', taskId: id, url: profilePath('employee', task.taptr) },
@@ -508,7 +513,8 @@ const updateTaskStatus = async (req, res) => {
 
     const push = from !== 'draft' && assigned && STATUS_PUSH[status]?.(task, from);
     if (push) {
-      sendPushToUsers(task.taptr, {
+      notifyUsers(task.taptr, {
+        userType: 'employee',
         ...push,
         data: { type: 'task', taskId: id, url: profilePath('employee', task.taptr) },
       });
@@ -594,7 +600,8 @@ const reassignTask = async (req, res) => {
     );
     if (newEmployeeId) {
       const task = await tasksCollection.findOne({ _id: new ObjectId(id) });
-      sendPushToUsers(newEmployeeId, {
+      notifyUsers(newEmployeeId, {
+        userType: 'employee',
         title: 'Task assigned to you',
         body: `${task?.tname || 'A task'} was assigned to you.`,
         data: { type: 'task', taskId: id, url: profilePath('employee', newEmployeeId) },
